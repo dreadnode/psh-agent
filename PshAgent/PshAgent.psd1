@@ -51,6 +51,7 @@
         'Invoke-ShellCommand'
         'Search-Files'
         'Search-FileContent'
+        'New-NtResearchAgent'
 
         # Hooks
         'New-Hook'
@@ -79,6 +80,14 @@
         # CLI
         'Start-PshAgent'
         'Invoke-SlashCommand'
+
+        # Tool Import
+        'Import-ToolFromCommand'
+        'Import-ToolsFromModule'
+        'Import-ToolsFromScript'
+
+        # Sub-Agents
+        'New-SubAgentTool'
     )
 
     CmdletsToExport   = @()

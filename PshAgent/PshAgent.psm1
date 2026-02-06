@@ -62,6 +62,7 @@ $exportedFunctions = @(
     'Invoke-ShellCommand'
     'Search-Files'
     'Search-FileContent'
+    'New-NtResearchAgent'
 
     # Hooks
     'New-Hook'
@@ -90,6 +91,14 @@ $exportedFunctions = @(
     # CLI
     'Start-PshAgent'
     'Invoke-SlashCommand'
+
+    # Tool Import
+    'Import-ToolFromCommand'
+    'Import-ToolsFromModule'
+    'Import-ToolsFromScript'
+
+    # Sub-Agents
+    'New-SubAgentTool'
 )
 
 Export-ModuleMember -Function $exportedFunctions
