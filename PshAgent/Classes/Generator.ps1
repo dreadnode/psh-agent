@@ -50,46 +50,34 @@ class PshGenerator {
         return $key
     }
 
-    # Non-streaming generation
-    [hashtable] Generate([Message[]]$messages, [hashtable]$options) {
+    # Merge defaults with options
+    hidden [hashtable] _MergeOptions([hashtable]$options) {
         $merged = @{}
         foreach ($k in $this.Defaults.Keys) { $merged[$k] = $this.Defaults[$k] }
         if ($options) {
             foreach ($k in $options.Keys) { $merged[$k] = $options[$k] }
         }
-
-        switch ($this.Provider) {
-            'anthropic' {
-                return Invoke-AnthropicApi -Generator $this -Messages $messages -Options $merged
-            }
-            'openai' {
-                return Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged
-            }
-            default {
-                # Try OpenAI-compatible for unknown providers
-                return Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged
-            }
-        }
+        return $merged
     }
 
-    # Streaming generation
-    [System.Collections.Generic.IEnumerable[hashtable]] Stream([Message[]]$messages, [hashtable]$options) {
-        $merged = @{}
-        foreach ($k in $this.Defaults.Keys) { $merged[$k] = $this.Defaults[$k] }
-        if ($options) {
-            foreach ($k in $options.Keys) { $merged[$k] = $options[$k] }
-        }
+    # Non-streaming generation
+    [hashtable] Generate([Message[]]$messages, [hashtable]$options) {
+        $merged = $this._MergeOptions($options)
 
-        switch ($this.Provider) {
-            'anthropic' {
-                return Invoke-AnthropicApi -Generator $this -Messages $messages -Options $merged -Stream
-            }
-            'openai' {
-                return Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged -Stream
-            }
-            default {
-                return Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged -Stream
-            }
+        if ($this.Provider -eq 'anthropic') {
+            return Invoke-AnthropicApi -Generator $this -Messages $messages -Options $merged
         }
+        # OpenAI and OpenAI-compatible providers
+        return Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged
+    }
+
+    # Streaming generation - returns array of stream chunk objects
+    [object[]] Stream([Message[]]$messages, [hashtable]$options) {
+        $merged = $this._MergeOptions($options)
+
+        if ($this.Provider -eq 'anthropic') {
+            return @(Invoke-AnthropicApi -Generator $this -Messages $messages -Options $merged -Stream)
+        }
+        return @(Invoke-OpenAIApi -Generator $this -Messages $messages -Options $merged -Stream)
     }
 }

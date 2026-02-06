@@ -9,6 +9,23 @@
 
     PowerShellVersion = '7.0'
 
+    # Classes must be in ScriptsToProcess to be visible outside the module
+    ScriptsToProcess  = @(
+        'Classes/Types.ps1'
+        'Classes/Content.ps1'
+        'Classes/ToolCall.ps1'
+        'Classes/Message.ps1'
+        'Classes/Reaction.ps1'
+        'Classes/AgentEvent.ps1'
+        'Classes/StopCondition.ps1'
+        'Classes/Hook.ps1'
+        'Classes/Tool.ps1'
+        'Classes/Generator.ps1'
+        'Classes/Trajectory.ps1'
+        'Classes/Agent.ps1'
+        'Classes/Session.ps1'
+    )
+
     FunctionsToExport = @(
         # Generator
         'New-Generator'
