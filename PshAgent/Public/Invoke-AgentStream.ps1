@@ -7,12 +7,12 @@ function Invoke-AgentStream {
     Events include: AgentStart, GenerationStart, GenerationStep, ToolStart, ToolStep, AgentEnd, etc.
     .PARAMETER Agent
     A PshAgent instance
-    .PARAMETER Input
+    .PARAMETER Prompt
     User input string
     .PARAMETER Trajectory
     Existing trajectory to continue from (for multi-turn)
     .EXAMPLE
-    Invoke-AgentStream -Agent $agent -Input 'Hello' | ForEach-Object {
+    Invoke-AgentStream -Agent $agent -Prompt 'Hello' | ForEach-Object {
         Write-Host "$($_.Type) step=$($_.Step)"
     }
     #>
@@ -22,7 +22,7 @@ function Invoke-AgentStream {
         [PshAgent]$Agent,
 
         [Parameter(Mandatory)]
-        [string]$Input,
+        [string]$Prompt,
 
         [Parameter()]
         [Trajectory]$Trajectory
@@ -121,7 +121,7 @@ function Invoke-AgentStream {
 
     # Emit AgentStart
     $startEvent = [AgentStartEvent]::new($Agent.Id, $Agent.Name)
-    $startEvent.Inputs = @{ goal = $Input }
+    $startEvent.Inputs = @{ goal = $Prompt }
     $traj.AddEvent($startEvent)
     & $dispatchEvent $startEvent | Out-Null
     # Attach trajectory for Invoke-Agent to retrieve
@@ -150,7 +150,7 @@ function Invoke-AgentStream {
 
             try {
                 # Get messages for generation
-                $userInput = if ($step -eq 1) { $Input } else { $null }
+                $userInput = if ($step -eq 1) { $Prompt } else { $null }
                 $messages = $traj.GetMessagesForGeneration($userInput)
 
                 # Generate
@@ -370,10 +370,21 @@ function Invoke-AgentStream {
         $agentError = $errorMsg
     }
 
+    # Extract final output from trajectory
+    $finalOutput = if ($finishResult) {
+        $finishResult
+    } else {
+        $lastMsg = $traj.GetLastMessage()
+        if ($lastMsg -and $lastMsg.Role -eq [MessageRole]::assistant) {
+            $lastMsg.GetText()
+        } else { $null }
+    }
+
     # Emit AgentEnd
     $endEvent = [AgentEndEvent]::new($Agent.Id, $Agent.Name)
     $endEvent.Status = $status
     $endEvent.StopReason = $stopReason
+    $endEvent.Output = $finalOutput
     $endEvent.Error = $agentError
     $traj.AddEvent($endEvent)
     & $dispatchEvent $endEvent | Out-Null

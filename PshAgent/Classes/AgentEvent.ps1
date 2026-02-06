@@ -46,6 +46,7 @@ class AgentStartEvent : AgentEvent {
 
 class AgentEndEvent : AgentEvent {
     [string]$StopReason = 'finished'
+    [string]$Output
     [string]$Error
 
     AgentEndEvent([string]$agentId, [string]$agentName) : base([AgentEventType]::AgentEnd, $agentId, $agentName) {}
