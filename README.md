@@ -757,6 +757,10 @@ Traditional C2 agents ship hardcoded modules for credential harvesting, persiste
 
 So the beacon ships with only PshAgent's built-in tools plus one custom `port_scan` (because structured TCP scanning is faster than shelling out per-port). Everything else is natural language → Claude → tool calls.
 
+**Steganographic transport** — Instead of sending raw encrypted blobs over HTTPS (which look suspicious to network sensors), payloads can be embedded in PNG images via LSB steganography, DNS TXT records, or zero-width Unicode in normal text. To DPI/blocklist sensors, the beacon is just fetching images or making DNS lookups. Inspired by `dn.transforms` encoding primitives from the dreadnode SDK.
+
+**Artifact cleanup** — A 5th beacon hook (`beacon_cleanup`) fires on every `AgentEnd` event, overwriting and deleting PshAgent session files (`~/.psh-agent/sessions/*.json`), conversation JSONL trajectories, C2-specific logs, and PowerShell readline history. On beacon termination, a full wipe (`Invoke-BeaconCleanup`) shreds everything with random bytes before deletion and clears PowerShell event logs if running elevated.
+
 ### Example Walkthrough
 
 ```
@@ -830,10 +834,12 @@ This means every tool call on every beacon feeds into one run with scoring, metr
 | Controller | `HttpListener` + `ConcurrentDictionary` | HTTP server, registry, task queues |
 | Beacon brain | `New-Agent` + `Invoke-Agent` | Claude executes tasks with tools |
 | Beacon tools | PshAgent built-ins + `port_scan` | `run_command`, `read_file`, `write_file`, `list_directory`, `search_files`, `grep` |
-| Beacon hooks | `New-Hook` (×4) | Telemetry, check-in, kill switch, stealth |
+| Beacon hooks | `New-Hook` (×5) | Telemetry, check-in, kill switch, stealth, cleanup |
 | Beacon stop | `StopCondition` | Kill switch or max-steps |
 | Mesh relay | `New-Tool` wrapping HTTP | Beacon-to-beacon forwarding |
 | Comms crypto | `System.Security.Cryptography.AesGcm` | AES-256-GCM on all payloads |
+| Stego transport | PNG LSB / DNS TXT / zero-width | Hide comms from network sensors |
+| Artifact cleanup | `Invoke-BeaconCleanup` + hook | Shred sessions, JSONL, logs, PS history |
 | Dashboard | Phoenix LiveView + GenServer poller | Read-only observer UI |
 
 ### Module Layout
@@ -842,7 +848,11 @@ This means every tool call on every beacon feeds into one run with scoring, metr
 c2-mesh/
 ├── c2-mesh.psd1 / .psm1        # module manifest + loader
 ├── Config/c2-config.ps1         # constants, defaults
-├── Crypto/Invoke-C2Crypto.ps1   # AES-256-GCM encrypt/decrypt
+├── Crypto/
+│   ├── Invoke-C2Crypto.ps1      # AES-256-GCM encrypt/decrypt
+│   └── Invoke-C2Stego.ps1       # PNG LSB stego transport
+├── Cleanup/
+│   └── Invoke-BeaconCleanup.ps1 # Forensic artifact wipe
 ├── Controller/
 │   ├── Start-C2Listener.ps1     # HttpListener in background runspace
 │   ├── Get-BeaconRegistry.ps1   # ConcurrentDictionary management

