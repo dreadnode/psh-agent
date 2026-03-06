@@ -807,6 +807,21 @@ Operator > deploy a beacon to 10.0.1.5 through beacon-7f3a
   → New beacon registers with controller
 ```
 
+### Observability with `dn.task()`
+
+The C2 mesh's `task_beacon` tool (queues a natural language string for a beacon) is a different layer from dreadnode's `dn.task()` decorator (wraps functions with tracing/scoring). But `dn.task()` can **instrument** the entire chain — the SDK's trace context propagation (`dn.get_run_context()` / `dn.continue_run()`) links operator → controller → beacon execution into a single traced run across machines:
+
+```
+dn.run("red-team-op")
+  └─ @dn.task: operator sends task              ← traced
+       └─ controller queues it                  ← context serialized
+            └─ dn.continue_run(context)         ← beacon picks up trace
+                 └─ @dn.task: Claude executes   ← same run, same span tree
+                      └─ tool calls, metrics    ← all linked
+```
+
+This means every tool call on every beacon feeds into one run with scoring, metrics, and artifact logging — and the dashboard can pull from dreadnode's tracing backend alongside the controller's internal API.
+
 ### PshAgent ↔ C2 Mapping
 
 | C2 concept | PshAgent API | What it does |
