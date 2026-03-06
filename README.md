@@ -710,7 +710,7 @@ API keys are read from environment variables:
 
 ## C2 Agent Mesh
 
-The `c2-mesh/` module builds a command-and-control agent mesh on top of PshAgent. Instead of shipping a static implant with hardcoded tradecraft, every compromised host runs a full PshAgent with Claude as its brain. You give it natural language tasks and the AI reasons about what commands to run, what files to read, how to persist, how to move laterally — using the same built-in tools (`run_command`, `read_file`, etc.) that ship with PshAgent.
+The `c2-mesh/` module builds a command-and-control agent mesh on top of PshAgent. Two flavors: **spin up** (deploy PshAgent + API key to a target) or **take over** (hijack an existing AI agent installation — Claude Code, Codex, Cursor, Gemini — using the victim's own binary and credentials). The beacon auto-detects which mode to use: if an auth'd agent exists on target, hijack it; if not, fall back to deploying PshAgent. Either way, the AI reasons about tradecraft in natural language using primitive tools (`run_command`, `read_file`, etc.).
 
 > Full implementation spec: [`docs/c2-mesh-implementation.md`](docs/c2-mesh-implementation.md)
 
