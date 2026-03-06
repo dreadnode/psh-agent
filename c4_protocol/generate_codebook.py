@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""
+Generate codebook.yaml from implant_actions.yaml.
+
+For each tool: 50 codewords styled as PascalCase class names (nouns).
+For each unique parameter: 100 codewords styled as snake_case function names
+(adjective, or adjective_noun combos).
+
+Usage:
+    python generate_codebook.py
+    python generate_codebook.py --actions implant_actions.yaml --output codebook.yaml
+"""
+
+import argparse
+import random
+import yaml
+
+random.seed(42)
+
+# ── Word banks ──────────────────────────────────────────────────────────────
+# Nouns for class-name style codewords (tools)
+CLASS_NOUNS = [
+    "Account", "Adapter", "Agent", "Allocator", "Analyzer", "Archive",
+    "Assembly", "Audit", "Balance", "Batch", "Beacon", "Binding",
+    "Blueprint", "Broker", "Buffer", "Builder", "Bundle", "Cache",
+    "Calendar", "Canvas", "Carrier", "Catalog", "Chain", "Channel",
+    "Checkpoint", "Circuit", "Client", "Cluster", "Codec", "Collector",
+    "Column", "Command", "Compiler", "Component", "Conductor", "Config",
+    "Connection", "Console", "Container", "Context", "Contract", "Controller",
+    "Converter", "Coordinator", "Counter", "Credential", "Cursor", "Daemon",
+    "Dashboard", "Dataset", "Decoder", "Delegate", "Depot", "Descriptor",
+    "Detector", "Device", "Digest", "Dimension", "Director", "Dispatch",
+    "Document", "Domain", "Driver", "Element", "Emitter", "Encoder",
+    "Endpoint", "Engine", "Entity", "Envelope", "Environment", "Evaluator",
+    "Event", "Exception", "Executor", "Explorer", "Exporter", "Expression",
+    "Extension", "Extractor", "Fabric", "Factory", "Feature", "Fence",
+    "Field", "Filter", "Fixture", "Flag", "Formatter", "Fragment",
+    "Frame", "Function", "Gateway", "Generator", "Graph", "Guard",
+    "Handle", "Handler", "Harness", "Header", "Heap", "Helper",
+    "Hook", "Hub", "Identity", "Image", "Importer", "Index",
+    "Indicator", "Initializer", "Injector", "Input", "Inspector", "Instance",
+    "Interface", "Interpreter", "Interval", "Inventory", "Invoice", "Iterator",
+    "Journal", "Junction", "Kernel", "Keychain", "Label", "Launcher",
+    "Layout", "Ledger", "Library", "Lifecycle", "Limiter", "Linker",
+    "Listener", "Loader", "Locale", "Lock", "Log", "Logger",
+    "Lookup", "Loop", "Manifest", "Mapper", "Marker", "Marshal",
+    "Matrix", "Mediator", "Membrane", "Memory", "Merger", "Message",
+    "Metadata", "Metric", "Middleware", "Migration", "Mirror", "Mixer",
+    "Model", "Module", "Monitor", "Multiplexer", "Mutex", "Namespace",
+    "Navigator", "Network", "Node", "Normalizer", "Notifier", "Object",
+    "Observer", "Operator", "Optimizer", "Oracle", "Orchestrator", "Origin",
+    "Outlet", "Output", "Override", "Package", "Packet", "Pager",
+    "Panel", "Parameter", "Parser", "Partition", "Patch", "Path",
+    "Payload", "Peer", "Pipeline", "Pivot", "Planner", "Platform",
+    "Plugin", "Pointer", "Policy", "Pool", "Port", "Portal",
+    "Predicate", "Printer", "Priority", "Probe", "Processor", "Producer",
+    "Profile", "Program", "Projection", "Prompt", "Property", "Protocol",
+    "Provider", "Proxy", "Publisher", "Pump", "Query", "Queue",
+    "Quota", "Range", "Reader", "Reactor", "Receiver", "Record",
+    "Recycler", "Reference", "Reflector", "Register", "Registry", "Relay",
+    "Renderer", "Replica", "Report", "Repository", "Request", "Resolver",
+    "Resource", "Response", "Result", "Retainer", "Router", "Rule",
+    "Runner", "Runtime", "Sampler", "Sandbox", "Scanner", "Scheduler",
+    "Schema", "Scope", "Script", "Sector", "Segment", "Selector",
+    "Semaphore", "Sender", "Sentinel", "Sequence", "Serializer", "Server",
+    "Service", "Session", "Setting", "Shell", "Shield", "Signal",
+    "Sink", "Slab", "Slice", "Snapshot", "Socket", "Source",
+    "Span", "Spec", "Splitter", "Spooler", "Stack", "Stage",
+    "State", "Status", "Storage", "Store", "Strategy", "Stream",
+    "Stripe", "Stub", "Subscriber", "Supervisor", "Surface", "Switch",
+    "Symbol", "Sync", "Table", "Tag", "Target", "Task",
+    "Template", "Tenant", "Terminal", "Thread", "Throttle", "Ticket",
+    "Timer", "Token", "Topic", "Tracker", "Transaction", "Transform",
+    "Translator", "Transport", "Trap", "Traverser", "Trigger", "Tunnel",
+    "Unit", "Updater", "Upstream", "Utility", "Validator", "Valve",
+    "Variable", "Vector", "Vendor", "Version", "View", "Visitor",
+    "Volume", "Watcher", "Widget", "Window", "Worker", "Workspace",
+    "Wrapper", "Writer", "Zone",
+]
+
+# Adjectives for function-name style codewords (parameters)
+FUNC_ADJECTIVES = [
+    "active", "async", "atomic", "auto", "base", "binary", "blank",
+    "bound", "brief", "broad", "broken", "bulk", "cached", "central",
+    "cheap", "clean", "clear", "closed", "cold", "compact", "complete",
+    "complex", "composite", "compressed", "concrete", "concurrent", "conditional",
+    "connected", "constant", "core", "critical", "cross", "current",
+    "custom", "cyclic", "dark", "dead", "deep", "default",
+    "deferred", "dense", "derived", "detached", "direct", "dirty",
+    "discrete", "distinct", "double", "dry", "dual", "durable",
+    "dynamic", "eager", "early", "elastic", "embedded", "empty",
+    "encoded", "encrypted", "ephemeral", "even", "exact", "excess",
+    "exclusive", "expanded", "explicit", "exposed", "extended", "external",
+    "extra", "fair", "fake", "fast", "fatal", "final",
+    "first", "fixed", "flat", "flexible", "foreign", "formal",
+    "forward", "fragile", "free", "fresh", "frozen", "full",
+    "fuzzy", "generic", "global", "golden", "graceful", "green",
+    "gross", "grouped", "guarded", "half", "hard", "healthy",
+    "heavy", "hidden", "high", "hollow", "home", "hosted",
+    "hot", "hybrid", "idle", "immutable", "implicit", "inactive",
+    "incremental", "indirect", "initial", "inline", "inner", "instant",
+    "internal", "inverse", "isolated", "joint", "known", "large",
+    "last", "late", "lateral", "lazy", "lean", "left",
+    "light", "linear", "linked", "liquid", "live", "local",
+    "locked", "logical", "long", "loose", "lost", "low",
+    "main", "major", "manual", "mapped", "marked", "masked",
+    "master", "max", "merged", "micro", "min", "minor",
+    "mixed", "mobile", "mock", "moist", "multi", "mutable",
+    "muted", "naked", "narrow", "native", "natural", "near",
+    "nested", "net", "neutral", "next", "nominal", "normal",
+    "null", "odd", "offline", "old", "online", "open",
+    "optimal", "ordered", "organic", "original", "orphan", "outer",
+    "owned", "packed", "paired", "parallel", "parent", "partial",
+    "passive", "past", "peak", "pending", "persistent", "phased",
+    "physical", "plain", "planned", "plural", "pooled", "portable",
+    "positive", "precise", "prepared", "primary", "prime", "prior",
+    "private", "probable", "proper", "protected", "proxy", "public",
+    "pure", "quick", "quiet", "random", "ranked", "rapid",
+    "rare", "raw", "ready", "real", "recent", "reduced",
+    "redundant", "regular", "relative", "released", "remote", "repeated",
+    "reserved", "resident", "resolved", "retained", "reverse", "rich",
+    "rigid", "robust", "root", "rough", "round", "safe",
+    "scalar", "sealed", "secondary", "secure", "serial", "shallow",
+    "shared", "sharp", "short", "signed", "silent", "simple",
+    "single", "slim", "slow", "small", "smart", "smooth",
+    "soft", "solid", "sorted", "sparse", "special", "specific",
+    "stable", "stacked", "staged", "stale", "standard", "static",
+    "steady", "steep", "sticky", "stiff", "stored", "strict",
+    "strong", "structured", "sub", "subtle", "super", "surface",
+    "suspect", "sweet", "swift", "synced", "tagged", "tall",
+    "terse", "thick", "thin", "tight", "timed", "tiny",
+    "top", "total", "tracked", "transient", "trim", "true",
+    "trusted", "typed", "ugly", "unbound", "unified", "unique",
+    "unknown", "unsigned", "upper", "urgent", "valid", "vast",
+    "verbose", "vertical", "viable", "virtual", "visible", "vital",
+    "volatile", "warm", "weak", "wet", "whole", "wide",
+    "wild", "wired", "wrapped", "zero",
+]
+
+# Nouns for function-name combos (adjective_noun)
+FUNC_NOUNS = [
+    "id", "key", "ref", "tag", "set", "map", "log", "bit",
+    "row", "col", "src", "dst", "buf", "ptr", "seg", "blk",
+    "idx", "seq", "cap", "len", "dim", "pos", "org", "uri",
+    "oid", "pid", "uid", "gid", "env", "arg", "opt", "cfg",
+    "val", "var", "sum", "avg", "min", "max", "cnt", "num",
+    "err", "msg", "ack", "syn", "fin", "hop", "ttl", "rpc",
+    "file", "path", "node", "edge", "link", "slot", "port", "gate",
+    "pipe", "wire", "cell", "grid", "pool", "heap", "slab", "ring",
+    "tree", "leaf", "root", "fork", "hook", "lock", "flag", "mode",
+    "mask", "hash", "salt", "seed", "span", "tick", "step", "rank",
+    "tier", "zone", "core", "unit", "item", "pair", "rule", "type",
+    "name", "code", "data", "blob", "page", "view", "form", "spec",
+    "stub", "mock", "trap", "hint", "plan", "task", "test", "case",
+]
+
+
+def generate_class_names(n, used):
+    """Pick n unique class-name-style codewords from the noun bank."""
+    available = [w for w in CLASS_NOUNS if w not in used]
+    random.shuffle(available)
+    picked = available[:n]
+    used.update(picked)
+    return picked
+
+
+def generate_func_names(n, used):
+    """
+    Generate n unique function-name-style codewords.
+
+    Mix of:
+    - bare adjectives: "cached", "frozen"
+    - adjective_noun combos: "get_id", "home_org", "fast_ref"
+    """
+    candidates = set()
+
+    # Generate a large pool of candidates
+    # Bare adjectives
+    for adj in FUNC_ADJECTIVES:
+        candidates.add(adj)
+
+    # adjective_noun combos
+    for adj in FUNC_ADJECTIVES:
+        for noun in FUNC_NOUNS:
+            candidates.add(f"{adj}_{noun}")
+
+    # Remove already-used names
+    candidates -= used
+    candidates = list(candidates)
+    random.shuffle(candidates)
+    picked = candidates[:n]
+    used.update(picked)
+    return picked
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Generate codebook from implant actions")
+    parser.add_argument("--actions", default="implant_actions.yaml", help="Input actions YAML")
+    parser.add_argument("--output", default="codebook.yaml", help="Output codebook YAML")
+    parser.add_argument("--tool-codes", type=int, default=50, help="Codewords per tool")
+    parser.add_argument("--param-codes", type=int, default=100, help="Codewords per parameter")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    args = parser.parse_args()
+
+    random.seed(args.seed)
+
+    with open(args.actions) as f:
+        actions = yaml.safe_load(f)
+
+    tools = actions["tools"]
+
+    # Track used names globally to avoid collisions across tools/params
+    used_class_names = set()
+    used_func_names = set()
+
+    # Generate tool codewords (class names → tool names)
+    tool_codes = {}
+    for tool_name in tools:
+        names = generate_class_names(args.tool_codes, used_class_names)
+        for name in names:
+            tool_codes[name] = tool_name
+
+    # Collect unique parameters across all tools
+    all_params = set()
+    for tool_name, tool_def in tools.items():
+        for param_name in tool_def.get("parameters", {}):
+            all_params.add(param_name)
+
+    # Generate parameter codewords (function names → param names)
+    param_codes = {}
+    for param_name in sorted(all_params):
+        names = generate_func_names(args.param_codes, used_func_names)
+        for name in names:
+            param_codes[name] = param_name
+
+    codebook = {
+        "tools": tool_codes,
+        "parameters": param_codes,
+    }
+
+    with open(args.output, "w") as f:
+        yaml.dump(codebook, f, default_flow_style=False, sort_keys=False, width=120)
+
+    # Summary
+    print(f"Generated codebook: {args.output}")
+    print(f"  Tools: {len(tools)} tools × {args.tool_codes} codewords = {len(tool_codes)} entries")
+    print(f"  Params: {len(all_params)} params × {args.param_codes} codewords = {len(param_codes)} entries")
+    print(f"  Unique params: {sorted(all_params)}")
+
+
+if __name__ == "__main__":
+    main()

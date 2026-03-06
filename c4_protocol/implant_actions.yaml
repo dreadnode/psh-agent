@@ -1,0 +1,85 @@
+## PshAgent Built-in Tools
+## These are the tools available to an agent during its agentic loop.
+
+tools:
+  read_file:
+    description: Read the contents of a file.
+    parameters:
+      path:
+        type: string
+        required: true
+        description: Path to the file to read
+
+  write_file:
+    description: Write content to a file. Creates parent directories if needed.
+    parameters:
+      path:
+        type: string
+        required: true
+        description: Path to the file to write
+      content:
+        type: string
+        required: true
+        description: Content to write
+
+  list_directory:
+    description: List files and directories in a path.
+    parameters:
+      path:
+        type: string
+        required: true
+        description: Directory path to list
+
+  search_files:
+    description: Search for files matching a glob pattern. Returns up to 50 results.
+    parameters:
+      pattern:
+        type: string
+        required: true
+        description: "Glob pattern to match (e.g., *.ps1, **/*.txt)"
+      path:
+        type: string
+        required: false
+        description: Directory to search in
+
+  grep:
+    description: Search for text or regex pattern in files. Returns up to 100 matches.
+    parameters:
+      pattern:
+        type: string
+        required: true
+        description: Text or regex pattern to search for
+      path:
+        type: string
+        required: false
+        description: File or directory to search in
+      include:
+        type: string
+        required: false
+        description: "File pattern to include (e.g., *.ps1)"
+
+  run_command:
+    description: >
+      Run a shell command and return its output. Uses cmd.exe on Windows,
+      /bin/sh elsewhere. Times out after 30 seconds.
+    parameters:
+      command:
+        type: string
+        required: true
+        description: Command to execute
+      cwd:
+        type: string
+        required: false
+        description: Working directory
+
+  nt_researcher:
+    description: >
+      Sub-agent for Windows security research. Delegates tasks to a child agent
+      loaded with NtObjectManager and optionally OleViewDotNet modules. The sub-agent
+      can enumerate NT objects, audit access controls, inspect RPC/COM interfaces,
+      analyze tokens, and investigate security boundaries.
+    parameters:
+      task:
+        type: string
+        required: true
+        description: The task to delegate to the sub-agent

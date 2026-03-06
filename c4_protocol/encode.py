@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+"""
+Encode a tool call as a natural-looking software directive.
+
+Takes a JSON dict with "name" (tool name) and parameter key:value pairs,
+maps tool and param names to random codewords from codebook.yaml, and
+wraps everything in a templated coding-task sentence.
+
+Usage:
+    python encode.py '{"name": "read_file", "path": "tmp.txt"}'
+    python encode.py '{"name": "run_command", "command": "whoami", "cwd": "/tmp"}'
+    python encode.py   # interactive mode
+"""
+
+import argparse
+import json
+import random
+
+import yaml
+
+TEMPLATES = [
+    "Create a class {cls} with a method {method}({param}='{value}').",
+    "Create a {cls} class. Add a {method}() method with default parameter {param}='{value}'.",
+    "Define class {cls} containing method {method}(). The {param} parameter must default to '{value}'.",
+    "Implement a {cls} class with a {method}({param}='{value}') method.",
+    "Build a new class called {cls}. It must have a method {method}() that takes {param}='{value}'.",
+    "Create class {cls}. Inside it, define {method}(self, {param}='{value}').",
+    "Write a {cls} class that exposes a {method}() method. {method}() accepts {param} with default '{value}'.",
+    "Add class {cls} with method {method}(). Set the default value of {param} to '{value}'.",
+    "Construct a {cls} class. Include a {method}({param}='{value}') method in it.",
+    "Generate a {cls} class with one method: {method}(self, {param}='{value}').",
+    "Create {cls}. Give it a {method}() method where {param} defaults to '{value}'.",
+    "Define a new {cls} class. It needs a {method}() method taking {param}='{value}' as a default argument.",
+    "Implement class {cls} with a single method {method}(). The method signature is {method}(self, {param}='{value}').",
+    "Set up a {cls} class containing {method}({param}='{value}').",
+    "Create the {cls} class. Add {method}() to it with {param}='{value}' in its signature.",
+]
+
+PARAM_NAMES = [
+    # Short / single-letter style
+    "s", "x", "n", "v", "k", "p", "t", "d", "r", "q",
+    # Common abbreviations
+    "val", "src", "dst", "buf", "key", "ref", "idx", "cnt",
+    "ptr", "len", "pos", "cap", "seq", "ret", "cur", "tmp",
+    "obj", "res", "ctx", "cfg", "opt", "env", "tok", "msg",
+    "uri", "url", "arg", "fmt", "sep", "tag", "err", "log",
+    "pid", "uid", "gid", "fd",
+    # Descriptive names
+    "data", "item", "spec", "name", "mode", "text", "path",
+    "node", "slot", "type", "kind", "size", "port", "host",
+    "addr", "mask", "flag", "code", "hash", "salt", "seed",
+    "root", "base", "head", "tail", "next", "prev", "span",
+    "rank", "step", "tick", "hint", "memo", "blob", "wire",
+    # Longer descriptive
+    "input", "value", "label", "level", "state", "scope",
+    "limit", "count", "index", "depth", "width", "chunk",
+    "token", "start", "batch", "group", "block", "frame",
+    "entry", "queue", "stack", "store", "cache", "event",
+    "shape", "dtype", "delay", "retry", "quota", "epoch",
+    "phase", "round", "delta", "alpha", "omega", "sigma",
+    "prefix", "suffix", "offset", "stride", "margin",
+    "target", "source", "origin", "handle", "weight",
+    "factor", "thresh", "result", "output", "filter",
+    "bucket", "buffer", "stream", "socket", "anchor",
+    "payload", "context", "timeout", "channel", "pattern",
+    "version", "segment", "operand", "binding", "message",
+]
+
+
+def load_codebook(path="codebook.yaml"):
+    with open(path) as f:
+        codebook = yaml.safe_load(f)
+
+    # Build reverse mappings: tool_name → [codewords], param_name → [codewords]
+    tool_to_codes = {}
+    for code, tool in codebook["tools"].items():
+        tool_to_codes.setdefault(tool, []).append(code)
+
+    param_to_codes = {}
+    for code, param in codebook["parameters"].items():
+        param_to_codes.setdefault(param, []).append(code)
+
+    return tool_to_codes, param_to_codes
+
+
+def encode(tool_to_codes, param_to_codes, action):
+    """Encode a tool action dict into a natural-looking directive."""
+    tool_name = action["name"]
+    if tool_name not in tool_to_codes:
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    cls = random.choice(tool_to_codes[tool_name])
+
+    # Encode each parameter
+    params = {k: v for k, v in action.items() if k != "name"}
+    if not params:
+        raise ValueError("At least one parameter is required")
+
+    parts = []
+    for param_name, param_value in params.items():
+        if param_name not in param_to_codes:
+            raise ValueError(f"Unknown parameter: {param_name}")
+
+        method = random.choice(param_to_codes[param_name])
+        fake_param = random.choice(PARAM_NAMES)
+        template = random.choice(TEMPLATES)
+        parts.append(template.format(
+            cls=cls, method=method, param=fake_param, value=param_value,
+        ))
+
+    return " ".join(parts)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Encode tool call as coded text")
+    parser.add_argument("action", nargs="?", help='JSON dict, e.g. \'{"name": "read_file", "path": "tmp.txt"}\'')
+    parser.add_argument("--codebook", default="codebook.yaml", help="Codebook YAML path")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed")
+    args = parser.parse_args()
+
+    if args.seed is not None:
+        random.seed(args.seed)
+
+    tool_to_codes, param_to_codes = load_codebook(args.codebook)
+
+    if args.action:
+        action = json.loads(args.action)
+        print(encode(tool_to_codes, param_to_codes, action))
+    else:
+        print("Enter JSON actions (Ctrl+C to quit):")
+        while True:
+            try:
+                line = input("> ").strip()
+                if line:
+                    action = json.loads(line)
+                    print(encode(tool_to_codes, param_to_codes, action))
+            except json.JSONDecodeError as e:
+                print(f"Invalid JSON: {e}")
+            except (KeyboardInterrupt, EOFError):
+                print()
+                break
+
+
+if __name__ == "__main__":
+    main()
