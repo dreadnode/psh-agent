@@ -30,42 +30,42 @@ from rich.console import Console
 console = Console()
 
 # ── Config ──────────────────────────────────────────────────────────────────
-EMBED_DIM = 16        # Dimensionality of token embedding vectors
-HIDDEN_DIM = 32       # Size of GRU hidden states
-NUM_LAYERS = 1        # Stacked GRU layers
-DROPOUT = 0.0         # No dropout needed for this simple task
-BATCH_SIZE = 128      # Training batch size
-EPOCHS = 40           # Total training epochs
-LR = 1e-3             # Initial learning rate for Adam
-TEACHER_FORCING = 0.5 # Probability of feeding true token vs predicted token
-OUTPUT_LEN = 2        # Fixed: always predict exactly 2 tokens (tool + param)
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-SEED = 42
+EMBED_DIM: int = 16        # Dimensionality of token embedding vectors
+HIDDEN_DIM: int = 32       # Size of GRU hidden states
+NUM_LAYERS: int = 1        # Stacked GRU layers
+DROPOUT: float = 0.0       # No dropout needed for this simple task
+BATCH_SIZE: int = 128      # Training batch size
+EPOCHS: int = 40           # Total training epochs
+LR: float = 1e-3           # Initial learning rate for Adam
+TEACHER_FORCING: float = 0.5  # Probability of feeding true token vs predicted token
+OUTPUT_LEN: int = 2        # Fixed: always predict exactly 2 tokens (tool + param)
+DEVICE: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+SEED: int = 42
 
 # ── Vocabulary ──────────────────────────────────────────────────────────────
-PAD = 0  # Padding
-SOS = 1  # Start-of-sequence
-EOS = 2  # End-of-sequence
-UNK = 3  # Unknown token
+PAD: int = 0  # Padding
+SOS: int = 1  # Start-of-sequence
+EOS: int = 2  # End-of-sequence
+UNK: int = 3  # Unknown token
 
 class Vocab:
     """Word-level vocabulary mapping tokens <-> integer IDs."""
 
-    def __init__(self):
-        self.tok2id = {"<PAD>": PAD, "<SOS>": SOS, "<EOS>": EOS, "<UNK>": UNK}
-        self.id2tok = {PAD: "<PAD>", SOS: "<SOS>", EOS: "<EOS>", UNK: "<UNK>"}
+    def __init__(self) -> None:
+        self.tok2id: dict[str, int] = {"<PAD>": PAD, "<SOS>": SOS, "<EOS>": EOS, "<UNK>": UNK}
+        self.id2tok: dict[int, str] = {PAD: "<PAD>", SOS: "<SOS>", EOS: "<EOS>", UNK: "<UNK>"}
 
-    def add(self, token):
+    def add(self, token: str) -> None:
         if token not in self.tok2id:
             idx = len(self.tok2id)
             self.tok2id[token] = idx
             self.id2tok[idx] = token
 
-    def encode(self, tokens):
+    def encode(self, tokens: list[str]) -> list[int]:
         return [self.tok2id.get(t, UNK) for t in tokens]
 
-    def decode(self, ids):
-        tokens = []
+    def decode(self, ids: list[int]) -> list[str]:
+        tokens: list[str] = []
         for i in ids:
             t = self.id2tok.get(i, "<UNK>")
             if t == "<EOS>":
@@ -74,11 +74,11 @@ class Vocab:
                 tokens.append(t)
         return tokens
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.tok2id)
 
 
-def tokenize(text):
+def tokenize(text: str) -> list[str]:
     """Split on whitespace. Input codewords are single tokens, no further splitting."""
     return text.split()
 
@@ -87,22 +87,22 @@ def tokenize(text):
 class CodebookDataset(Dataset):
     """Dataset yielding (source_ids, target_ids) tensor pairs."""
 
-    def __init__(self, pairs, src_vocab, tgt_vocab):
+    def __init__(self, pairs: list[tuple[str, str]], src_vocab: Vocab, tgt_vocab: Vocab) -> None:
         self.pairs = pairs
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.pairs)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         coded, decoded = self.pairs[idx]
         src = self.src_vocab.encode(tokenize(coded))
         tgt = [SOS] + self.tgt_vocab.encode(tokenize(decoded)) + [EOS]
         return torch.tensor(src, dtype=torch.long), torch.tensor(tgt, dtype=torch.long)
 
 
-def collate(batch):
+def collate(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
     srcs, tgts = zip(*batch)
     srcs_padded = pad_sequence(srcs, batch_first=True, padding_value=PAD)
     tgts_padded = pad_sequence(tgts, batch_first=True, padding_value=PAD)
@@ -113,14 +113,14 @@ def collate(batch):
 class Encoder(nn.Module):
     """Bidirectional GRU encoder."""
 
-    def __init__(self, vocab_size, embed_dim, hidden_dim, num_layers):
+    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int, num_layers: int) -> None:
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=PAD)
         self.rnn = nn.GRU(embed_dim, hidden_dim, num_layers,
                           batch_first=True, bidirectional=True)
         self.fc = nn.Linear(hidden_dim * 2, hidden_dim)
 
-    def forward(self, src):
+    def forward(self, src: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         embedded = self.embedding(src)
         outputs, hidden = self.rnn(embedded)
         hidden = hidden.view(self.rnn.num_layers, 2, -1, self.rnn.hidden_size)
@@ -132,7 +132,7 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     """GRU decoder with Bahdanau attention."""
 
-    def __init__(self, vocab_size, embed_dim, hidden_dim, num_layers):
+    def __init__(self, vocab_size: int, embed_dim: int, hidden_dim: int, num_layers: int) -> None:
         super().__init__()
         self.vocab_size = vocab_size
         self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=PAD)
@@ -148,7 +148,9 @@ class Decoder(nn.Module):
         # Output projection
         self.fc_out = nn.Linear(hidden_dim * 3 + embed_dim, vocab_size)
 
-    def forward_step(self, input_tok, hidden, encoder_outputs):
+    def forward_step(
+        self, input_tok: torch.Tensor, hidden: torch.Tensor, encoder_outputs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Decode one step. Returns logits and updated hidden state."""
         embedded = self.embedding(input_tok)  # (batch, 1, embed)
 
@@ -176,13 +178,15 @@ class Seq2Seq(nn.Module):
     makes it exportable as a single ONNX graph.
     """
 
-    def __init__(self, encoder, decoder, device):
+    def __init__(self, encoder: Encoder, decoder: Decoder, device: torch.device) -> None:
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.device = device
 
-    def forward(self, src, tgt, teacher_forcing_ratio=0.5):
+    def forward(
+        self, src: torch.Tensor, tgt: torch.Tensor, teacher_forcing_ratio: float = 0.5
+    ) -> torch.Tensor:
         """Training forward pass with teacher forcing."""
         batch_size = src.shape[0]
         tgt_len = tgt.shape[1]
@@ -202,7 +206,7 @@ class Seq2Seq(nn.Module):
 
         return outputs
 
-    def forward_fixed(self, src):
+    def forward_fixed(self, src: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Fixed 2-step decode for inference and ONNX export.
 
@@ -223,7 +227,7 @@ class Seq2Seq(nn.Module):
         return logits1, logits2
 
     @torch.no_grad()
-    def translate(self, src):
+    def translate(self, src: torch.Tensor) -> list[int]:
         """Inference: decode 2 tokens from source."""
         self.eval()
         logits1, logits2 = self.forward_fixed(src)
@@ -231,7 +235,7 @@ class Seq2Seq(nn.Module):
 
 
 # ── ONNX Export ─────────────────────────────────────────────────────────────
-def export_onnx(model, src_vocab, tgt_vocab, output_dir):
+def export_onnx(model: Seq2Seq, src_vocab: Vocab, tgt_vocab: Vocab, output_dir: str) -> None:
     """Export the full model as a single ONNX graph."""
     model.eval()
     console.print()
@@ -244,11 +248,11 @@ def export_onnx(model, src_vocab, tgt_vocab, output_dir):
     model_path = os.path.join(output_dir, "model.onnx")
 
     class FixedDecodeWrapper(nn.Module):
-        def __init__(self, seq2seq):
+        def __init__(self, seq2seq: Seq2Seq) -> None:
             super().__init__()
             self.seq2seq = seq2seq
 
-        def forward(self, src):
+        def forward(self, src: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             logits1, logits2 = self.seq2seq.forward_fixed(src)
             return logits1, logits2
 
@@ -276,7 +280,7 @@ def export_onnx(model, src_vocab, tgt_vocab, output_dir):
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
-def main():
+def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Train seq2seq model")
     parser.add_argument("--dataset", default="dataset.json", help="Input dataset JSON")
@@ -289,9 +293,9 @@ def main():
     torch.manual_seed(args.seed)
 
     with open(args.dataset) as f:
-        data = json.load(f)
+        data: list[dict[str, str]] = json.load(f)
 
-    pairs = [(d["coded"], d["decoded"]) for d in data]
+    pairs: list[tuple[str, str]] = [(d["coded"], d["decoded"]) for d in data]
     random.shuffle(pairs)
 
     split = int(len(pairs) * 0.9)
@@ -319,19 +323,20 @@ def main():
     decoder = Decoder(len(tgt_vocab), EMBED_DIM, HIDDEN_DIM, NUM_LAYERS)
     model = Seq2Seq(encoder, decoder, DEVICE).to(DEVICE)
 
-    param_count = sum(p.numel() for p in model.parameters())
+    param_count: int = sum(p.numel() for p in model.parameters())
     console.print(f"[bold]Parameters:[/] [cyan]{param_count:,}[/]\n")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LR)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=5, factor=0.5)
     criterion = nn.CrossEntropyLoss(ignore_index=PAD)
 
-    best_val_loss = float("inf")
+    best_val_loss: float = float("inf")
+    accuracy: float = 0.0
 
     for epoch in range(1, args.epochs + 1):
         # ── Training ────────────────────────────────────────────────────
         model.train()
-        train_loss = 0
+        train_loss: float = 0.0
         for src, tgt in train_dl:
             src, tgt = src.to(DEVICE), tgt.to(DEVICE)
             optimizer.zero_grad()
@@ -348,9 +353,9 @@ def main():
 
         # ── Validation ──────────────────────────────────────────────────
         model.eval()
-        val_loss = 0
-        correct = 0
-        total = 0
+        val_loss: float = 0.0
+        correct: int = 0
+        total: int = 0
         with torch.no_grad():
             for src, tgt in val_dl:
                 src, tgt = src.to(DEVICE), tgt.to(DEVICE)
@@ -368,9 +373,9 @@ def main():
                     total += 1
 
         val_loss /= len(val_dl)
-        accuracy = correct / total if total > 0 else 0
+        accuracy = correct / total if total > 0 else 0.0
         scheduler.step(val_loss)
-        lr = optimizer.param_groups[0]["lr"]
+        lr: float = optimizer.param_groups[0]["lr"]
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -395,7 +400,7 @@ def main():
             )
 
     # ── Final evaluation ────────────────────────────────────────────────────
-    checkpoint = torch.load(args.output, weights_only=False)
+    checkpoint: dict = torch.load(args.output, weights_only=False)
     model.load_state_dict(checkpoint["model"])
     model.eval()
 
@@ -403,9 +408,9 @@ def main():
     console.rule("[bold]Sample Translations[/]")
     for coded, decoded in val_pairs[:10]:
         src_ids = torch.tensor([src_vocab.encode(tokenize(coded))], dtype=torch.long, device=DEVICE)
-        pred_ids = model.translate(src_ids)
-        pred_toks = tgt_vocab.decode(pred_ids)
-        prediction = " ".join(pred_toks)
+        pred_ids: list[int] = model.translate(src_ids)
+        pred_toks: list[str] = tgt_vocab.decode(pred_ids)
+        prediction: str = " ".join(pred_toks)
         match = prediction == decoded
         status = "[green]✓[/]" if match else "[red]✗[/]"
         console.print(f"  [dim]coded:[/]   {coded}")
@@ -414,13 +419,13 @@ def main():
         console.print()
 
     # ── ONNX export ─────────────────────────────────────────────────────────
-    onnx_dir = args.output.replace(".pt", "_onnx")
+    onnx_dir: str = args.output.replace(".pt", "_onnx")
     export_onnx(model, src_vocab, tgt_vocab, onnx_dir)
 
     # ── Metadata ────────────────────────────────────────────────────────────
-    meta_path = args.output.replace(".pt", "_meta.json")
-    onnx_model_path = os.path.join(onnx_dir, "model.onnx")
-    meta = {
+    meta_path: str = args.output.replace(".pt", "_meta.json")
+    onnx_model_path: str = os.path.join(onnx_dir, "model.onnx")
+    meta: dict = {
         "model_path": os.path.abspath(args.output),
         "model_size_bytes": os.path.getsize(args.output),
         "onnx_dir": os.path.abspath(onnx_dir),

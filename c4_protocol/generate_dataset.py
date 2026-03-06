@@ -21,7 +21,7 @@ from collections import Counter
 import yaml
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Generate dataset from codebook")
     parser.add_argument("--codebook", default="codebook.yaml", help="Input codebook YAML")
     parser.add_argument("--output", default="dataset.json", help="Output dataset JSON")
@@ -32,30 +32,30 @@ def main():
     random.seed(args.seed)
 
     with open(args.codebook) as f:
-        codebook = yaml.safe_load(f)
+        codebook: dict = yaml.safe_load(f)
 
     # Build reverse mappings: tool_name → [codewords], param_name → [codewords]
-    tool_to_codes = {}
+    tool_to_codes: dict[str, list[str]] = {}
     for code, tool in codebook["tools"].items():
         tool_to_codes.setdefault(tool, []).append(code)
 
-    param_to_codes = {}
+    param_to_codes: dict[str, list[str]] = {}
     for code, param in codebook["parameters"].items():
         param_to_codes.setdefault(param, []).append(code)
 
-    tool_names = list(tool_to_codes.keys())
-    param_names = list(param_to_codes.keys())
+    tool_names: list[str] = list(tool_to_codes.keys())
+    param_names: list[str] = list(param_to_codes.keys())
 
     # All tool × param combos
-    all_combos = [(t, p) for t in tool_names for p in param_names]
+    all_combos: list[tuple[str, str]] = [(t, p) for t in tool_names for p in param_names]
 
-    examples = []
+    examples: list[dict[str, str]] = []
 
     # Ensure every combo appears at least twice
     for tool, param in all_combos:
         for _ in range(2):
-            tool_code = random.choice(tool_to_codes[tool])
-            param_code = random.choice(param_to_codes[param])
+            tool_code: str = random.choice(tool_to_codes[tool])
+            param_code: str = random.choice(param_to_codes[param])
             coded = f"{tool_code} {param_code}"
             decoded = f"{tool} {param}"
             examples.append({"coded": coded, "decoded": decoded})

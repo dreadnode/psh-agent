@@ -18,7 +18,7 @@ import random
 
 import yaml
 
-TEMPLATES = [
+TEMPLATES: list[str] = [
     "Create a class {cls} with a method {method}({param}='{value}').",
     "Create a {cls} class. Add a {method}() method with default parameter {param}='{value}'.",
     "Define class {cls} containing method {method}(). The {param} parameter must default to '{value}'.",
@@ -36,7 +36,7 @@ TEMPLATES = [
     "Create the {cls} class. Add {method}() to it with {param}='{value}' in its signature.",
 ]
 
-PARAM_NAMES = [
+PARAM_NAMES: list[str] = [
     # Short / single-letter style
     "s", "x", "n", "v", "k", "p", "t", "d", "r", "q",
     # Common abbreviations
@@ -67,43 +67,46 @@ PARAM_NAMES = [
 ]
 
 
-def load_codebook(path="codebook.yaml"):
+CodewordMap = dict[str, list[str]]
+
+
+def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap]:
     with open(path) as f:
-        codebook = yaml.safe_load(f)
+        codebook: dict = yaml.safe_load(f)
 
     # Build reverse mappings: tool_name → [codewords], param_name → [codewords]
-    tool_to_codes = {}
+    tool_to_codes: CodewordMap = {}
     for code, tool in codebook["tools"].items():
         tool_to_codes.setdefault(tool, []).append(code)
 
-    param_to_codes = {}
+    param_to_codes: CodewordMap = {}
     for code, param in codebook["parameters"].items():
         param_to_codes.setdefault(param, []).append(code)
 
     return tool_to_codes, param_to_codes
 
 
-def encode(tool_to_codes, param_to_codes, action):
+def encode(tool_to_codes: CodewordMap, param_to_codes: CodewordMap, action: dict[str, str]) -> str:
     """Encode a tool action dict into a natural-looking directive."""
-    tool_name = action["name"]
+    tool_name: str = action["name"]
     if tool_name not in tool_to_codes:
         raise ValueError(f"Unknown tool: {tool_name}")
 
-    cls = random.choice(tool_to_codes[tool_name])
+    cls: str = random.choice(tool_to_codes[tool_name])
 
     # Encode each parameter
-    params = {k: v for k, v in action.items() if k != "name"}
+    params: dict[str, str] = {k: v for k, v in action.items() if k != "name"}
     if not params:
         raise ValueError("At least one parameter is required")
 
-    parts = []
+    parts: list[str] = []
     for param_name, param_value in params.items():
         if param_name not in param_to_codes:
             raise ValueError(f"Unknown parameter: {param_name}")
 
-        method = random.choice(param_to_codes[param_name])
-        fake_param = random.choice(PARAM_NAMES)
-        template = random.choice(TEMPLATES)
+        method: str = random.choice(param_to_codes[param_name])
+        fake_param: str = random.choice(PARAM_NAMES)
+        template: str = random.choice(TEMPLATES)
         parts.append(template.format(
             cls=cls, method=method, param=fake_param, value=param_value,
         ))
@@ -111,7 +114,7 @@ def encode(tool_to_codes, param_to_codes, action):
     return " ".join(parts)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Encode tool call as coded text")
     parser.add_argument("action", nargs="?", help='JSON dict, e.g. \'{"name": "read_file", "path": "tmp.txt"}\'')
     parser.add_argument("--codebook", default="codebook.yaml", help="Codebook YAML path")
@@ -124,13 +127,13 @@ def main():
     tool_to_codes, param_to_codes = load_codebook(args.codebook)
 
     if args.action:
-        action = json.loads(args.action)
+        action: dict[str, str] = json.loads(args.action)
         print(encode(tool_to_codes, param_to_codes, action))
     else:
         print("Enter JSON actions (Ctrl+C to quit):")
         while True:
             try:
-                line = input("> ").strip()
+                line: str = input("> ").strip()
                 if line:
                     action = json.loads(line)
                     print(encode(tool_to_codes, param_to_codes, action))

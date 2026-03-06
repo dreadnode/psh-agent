@@ -13,13 +13,14 @@ Usage:
 
 import argparse
 import random
+
 import yaml
 
 random.seed(42)
 
 # ── Word banks ──────────────────────────────────────────────────────────────
 # Nouns for class-name style codewords (tools)
-CLASS_NOUNS = [
+CLASS_NOUNS: list[str] = [
     "Account", "Adapter", "Agent", "Allocator", "Analyzer", "Archive",
     "Assembly", "Audit", "Balance", "Batch", "Beacon", "Binding",
     "Blueprint", "Broker", "Buffer", "Builder", "Bundle", "Cache",
@@ -79,7 +80,7 @@ CLASS_NOUNS = [
 ]
 
 # Adjectives for function-name style codewords (parameters)
-FUNC_ADJECTIVES = [
+FUNC_ADJECTIVES: list[str] = [
     "active", "async", "atomic", "auto", "base", "binary", "blank",
     "bound", "brief", "broad", "broken", "bulk", "cached", "central",
     "cheap", "clean", "clear", "closed", "cold", "compact", "complete",
@@ -138,7 +139,7 @@ FUNC_ADJECTIVES = [
 ]
 
 # Nouns for function-name combos (adjective_noun)
-FUNC_NOUNS = [
+FUNC_NOUNS: list[str] = [
     "id", "key", "ref", "tag", "set", "map", "log", "bit",
     "row", "col", "src", "dst", "buf", "ptr", "seg", "blk",
     "idx", "seq", "cap", "len", "dim", "pos", "org", "uri",
@@ -155,7 +156,7 @@ FUNC_NOUNS = [
 ]
 
 
-def generate_class_names(n, used):
+def generate_class_names(n: int, used: set[str]) -> list[str]:
     """Pick n unique class-name-style codewords from the noun bank."""
     available = [w for w in CLASS_NOUNS if w not in used]
     random.shuffle(available)
@@ -164,7 +165,7 @@ def generate_class_names(n, used):
     return picked
 
 
-def generate_func_names(n, used):
+def generate_func_names(n: int, used: set[str]) -> list[str]:
     """
     Generate n unique function-name-style codewords.
 
@@ -172,7 +173,7 @@ def generate_func_names(n, used):
     - bare adjectives: "cached", "frozen"
     - adjective_noun combos: "get_id", "home_org", "fast_ref"
     """
-    candidates = set()
+    candidates: set[str] = set()
 
     # Generate a large pool of candidates
     # Bare adjectives
@@ -186,14 +187,14 @@ def generate_func_names(n, used):
 
     # Remove already-used names
     candidates -= used
-    candidates = list(candidates)
-    random.shuffle(candidates)
-    picked = candidates[:n]
+    candidates_list = list(candidates)
+    random.shuffle(candidates_list)
+    picked = candidates_list[:n]
     used.update(picked)
     return picked
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Generate codebook from implant actions")
     parser.add_argument("--actions", default="implant_actions.yaml", help="Input actions YAML")
     parser.add_argument("--output", default="codebook.yaml", help="Output codebook YAML")
@@ -205,35 +206,35 @@ def main():
     random.seed(args.seed)
 
     with open(args.actions) as f:
-        actions = yaml.safe_load(f)
+        actions: dict = yaml.safe_load(f)
 
-    tools = actions["tools"]
+    tools: dict = actions["tools"]
 
     # Track used names globally to avoid collisions across tools/params
-    used_class_names = set()
-    used_func_names = set()
+    used_class_names: set[str] = set()
+    used_func_names: set[str] = set()
 
     # Generate tool codewords (class names → tool names)
-    tool_codes = {}
+    tool_codes: dict[str, str] = {}
     for tool_name in tools:
         names = generate_class_names(args.tool_codes, used_class_names)
         for name in names:
             tool_codes[name] = tool_name
 
     # Collect unique parameters across all tools
-    all_params = set()
+    all_params: set[str] = set()
     for tool_name, tool_def in tools.items():
         for param_name in tool_def.get("parameters", {}):
             all_params.add(param_name)
 
     # Generate parameter codewords (function names → param names)
-    param_codes = {}
+    param_codes: dict[str, str] = {}
     for param_name in sorted(all_params):
         names = generate_func_names(args.param_codes, used_func_names)
         for name in names:
             param_codes[name] = param_name
 
-    codebook = {
+    codebook: dict[str, dict[str, str]] = {
         "tools": tool_codes,
         "parameters": param_codes,
     }
