@@ -34,33 +34,51 @@ STEPS: dict[str, StepDef] = {
         "script": "generate_codebook.py",
         "description": "Generate codebook from implant_actions.yaml",
         "args": lambda a: [
-            "--actions", str(DIR / a.actions),
-            "--output", str(DIR / "codebook.yaml"),
-            "--tool-codes", str(a.tool_codes),
-            "--param-codes", str(a.param_codes),
-            "--seed", str(a.seed),
+            "--actions",
+            str(DIR / a.actions),
+            "--output",
+            str(DIR / "codebook.yaml"),
+            "--tool-codes",
+            str(a.tool_codes),
+            "--param-codes",
+            str(a.param_codes),
+            "--seed",
+            str(a.seed),
         ],
     },
     "dataset": {
         "script": "generate_dataset.py",
         "description": "Generate training dataset with salt and decoys",
-        "args": lambda a: [
-            "--codebook", str(DIR / "codebook.yaml"),
-            "--output", str(DIR / "dataset.json"),
-            "--num-examples", str(a.num_examples),
-            "--num-decoys", str(a.num_decoys),
-            "--salt-file", str(DIR / "salt.txt"),
-            "--seed", str(a.seed),
-        ] + (["--salt", a.salt] if a.salt else []),
+        "args": lambda a: (
+            [
+                "--codebook",
+                str(DIR / "codebook.yaml"),
+                "--output",
+                str(DIR / "dataset.json"),
+                "--num-examples",
+                str(a.num_examples),
+                "--num-decoys",
+                str(a.num_decoys),
+                "--salt-file",
+                str(DIR / "salt.txt"),
+                "--seed",
+                str(a.seed),
+            ]
+            + (["--salt", a.salt] if a.salt else [])
+        ),
     },
     "train": {
         "script": "train_seq2seq.py",
         "description": "Train seq2seq model",
         "args": lambda a: [
-            "--dataset", str(DIR / "dataset.json"),
-            "--output", str(DIR / "models" / "seq2seq_model.pt"),
-            "--epochs", str(a.epochs),
-            "--seed", str(a.seed),
+            "--dataset",
+            str(DIR / "dataset.json"),
+            "--output",
+            str(DIR / "models" / "seq2seq_model.pt"),
+            "--epochs",
+            str(a.epochs),
+            "--seed",
+            str(a.seed),
         ],
     },
 }
@@ -114,7 +132,9 @@ def show_summary(args: argparse.Namespace) -> None:
         meta: dict = json.load(f)
 
     accuracy: float = meta["accuracy"]
-    acc_color: str = "green" if accuracy >= 0.95 else "yellow" if accuracy >= 0.80 else "red"
+    acc_color: str = (
+        "green" if accuracy >= 0.95 else "yellow" if accuracy >= 0.80 else "red"
+    )
 
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(style="bold")
@@ -130,7 +150,9 @@ def show_summary(args: argparse.Namespace) -> None:
     table.add_row("Accuracy", Text(f"{accuracy:.1%}", style=f"bold {acc_color}"))
     table.add_row("Val loss", f"{meta['val_loss']:.6f}")
     table.add_row("Epochs", str(meta["epochs"]))
-    table.add_row("Train / Val", f"{meta['train_examples']:,} / {meta['val_examples']:,}")
+    table.add_row(
+        "Train / Val", f"{meta['train_examples']:,} / {meta['val_examples']:,}"
+    )
 
     console.print()
     console.print(Panel(table, title="[bold]Pipeline Results[/]", border_style="green"))
@@ -140,12 +162,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="C4 Protocol master pipeline")
     parser.add_argument("--step", choices=STEP_ORDER, help="Run only this step")
     parser.add_argument("--skip-train", action="store_true", help="Skip training step")
-    parser.add_argument("--actions", default="implant_actions.yaml", help="Actions YAML input")
+    parser.add_argument(
+        "--actions", default="implant_actions.yaml", help="Actions YAML input"
+    )
     parser.add_argument("--tool-codes", type=int, default=50, help="Codewords per tool")
-    parser.add_argument("--param-codes", type=int, default=100, help="Codewords per parameter")
-    parser.add_argument("--num-examples", type=int, default=8000, help="Real training examples")
-    parser.add_argument("--num-decoys", type=int, default=1500, help="Decoy training examples")
-    parser.add_argument("--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)")
+    parser.add_argument(
+        "--param-codes", type=int, default=100, help="Codewords per parameter"
+    )
+    parser.add_argument(
+        "--num-examples", type=int, default=8000, help="Real training examples"
+    )
+    parser.add_argument(
+        "--num-decoys", type=int, default=1500, help="Decoy training examples"
+    )
+    parser.add_argument(
+        "--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)"
+    )
     parser.add_argument("--epochs", type=int, default=80, help="Training epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()

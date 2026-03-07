@@ -38,32 +38,156 @@ TEMPLATES: list[str] = [
 
 PARAM_NAMES: list[str] = [
     # Short / single-letter style
-    "s", "x", "n", "v", "k", "p", "t", "d", "r", "q",
+    "s",
+    "x",
+    "n",
+    "v",
+    "k",
+    "p",
+    "t",
+    "d",
+    "r",
+    "q",
     # Common abbreviations
-    "val", "src", "dst", "buf", "key", "ref", "idx", "cnt",
-    "ptr", "len", "pos", "cap", "seq", "ret", "cur", "tmp",
-    "obj", "res", "ctx", "cfg", "opt", "env", "tok", "msg",
-    "uri", "url", "arg", "fmt", "sep", "tag", "err", "log",
-    "pid", "uid", "gid", "fd",
+    "val",
+    "src",
+    "dst",
+    "buf",
+    "key",
+    "ref",
+    "idx",
+    "cnt",
+    "ptr",
+    "len",
+    "pos",
+    "cap",
+    "seq",
+    "ret",
+    "cur",
+    "tmp",
+    "obj",
+    "res",
+    "ctx",
+    "cfg",
+    "opt",
+    "env",
+    "tok",
+    "msg",
+    "uri",
+    "url",
+    "arg",
+    "fmt",
+    "sep",
+    "tag",
+    "err",
+    "log",
+    "pid",
+    "uid",
+    "gid",
+    "fd",
     # Descriptive names
-    "data", "item", "spec", "name", "mode", "text", "path",
-    "node", "slot", "type", "kind", "size", "port", "host",
-    "addr", "mask", "flag", "code", "hash", "salt", "seed",
-    "root", "base", "head", "tail", "next", "prev", "span",
-    "rank", "step", "tick", "hint", "memo", "blob", "wire",
+    "data",
+    "item",
+    "spec",
+    "name",
+    "mode",
+    "text",
+    "path",
+    "node",
+    "slot",
+    "type",
+    "kind",
+    "size",
+    "port",
+    "host",
+    "addr",
+    "mask",
+    "flag",
+    "code",
+    "hash",
+    "salt",
+    "seed",
+    "root",
+    "base",
+    "head",
+    "tail",
+    "next",
+    "prev",
+    "span",
+    "rank",
+    "step",
+    "tick",
+    "hint",
+    "memo",
+    "blob",
+    "wire",
     # Longer descriptive
-    "input", "value", "label", "level", "state", "scope",
-    "limit", "count", "index", "depth", "width", "chunk",
-    "token", "start", "batch", "group", "block", "frame",
-    "entry", "queue", "stack", "store", "cache", "event",
-    "shape", "dtype", "delay", "retry", "quota", "epoch",
-    "phase", "round", "delta", "alpha", "omega", "sigma",
-    "prefix", "suffix", "offset", "stride", "margin",
-    "target", "source", "origin", "handle", "weight",
-    "factor", "thresh", "result", "output", "filter",
-    "bucket", "buffer", "stream", "socket", "anchor",
-    "payload", "context", "timeout", "channel", "pattern",
-    "version", "segment", "operand", "binding", "message",
+    "input",
+    "value",
+    "label",
+    "level",
+    "state",
+    "scope",
+    "limit",
+    "count",
+    "index",
+    "depth",
+    "width",
+    "chunk",
+    "token",
+    "start",
+    "batch",
+    "group",
+    "block",
+    "frame",
+    "entry",
+    "queue",
+    "stack",
+    "store",
+    "cache",
+    "event",
+    "shape",
+    "dtype",
+    "delay",
+    "retry",
+    "quota",
+    "epoch",
+    "phase",
+    "round",
+    "delta",
+    "alpha",
+    "omega",
+    "sigma",
+    "prefix",
+    "suffix",
+    "offset",
+    "stride",
+    "margin",
+    "target",
+    "source",
+    "origin",
+    "handle",
+    "weight",
+    "factor",
+    "thresh",
+    "result",
+    "output",
+    "filter",
+    "bucket",
+    "buffer",
+    "stream",
+    "socket",
+    "anchor",
+    "payload",
+    "context",
+    "timeout",
+    "channel",
+    "pattern",
+    "version",
+    "segment",
+    "operand",
+    "binding",
+    "message",
 ]
 
 
@@ -86,7 +210,9 @@ def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap
     return tool_to_codes, param_to_codes
 
 
-def encode(tool_to_codes: CodewordMap, param_to_codes: CodewordMap, action: dict[str, str]) -> str:
+def encode(
+    tool_to_codes: CodewordMap, param_to_codes: CodewordMap, action: dict[str, str]
+) -> str:
     """Encode a tool action dict into a natural-looking directive."""
     tool_name: str = action["name"]
     if tool_name not in tool_to_codes:
@@ -107,17 +233,28 @@ def encode(tool_to_codes: CodewordMap, param_to_codes: CodewordMap, action: dict
         method: str = random.choice(param_to_codes[param_name])
         fake_param: str = random.choice(PARAM_NAMES)
         template: str = random.choice(TEMPLATES)
-        parts.append(template.format(
-            cls=cls, method=method, param=fake_param, value=param_value,
-        ))
+        parts.append(
+            template.format(
+                cls=cls,
+                method=method,
+                param=fake_param,
+                value=param_value,
+            )
+        )
 
     return " ".join(parts)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Encode tool call as coded text")
-    parser.add_argument("action", nargs="?", help='JSON dict, e.g. \'{"name": "read_file", "path": "tmp.txt"}\'')
-    parser.add_argument("--codebook", default="codebook.yaml", help="Codebook YAML path")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        help='JSON dict, e.g. \'{"name": "read_file", "path": "tmp.txt"}\'',
+    )
+    parser.add_argument(
+        "--codebook", default="codebook.yaml", help="Codebook YAML path"
+    )
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     args = parser.parse_args()
 

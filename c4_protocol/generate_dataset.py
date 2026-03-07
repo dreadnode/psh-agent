@@ -26,88 +26,360 @@ import yaml
 # ── Decoy word banks ────────────────────────────────────────────────────────
 # Plausible-looking "tool names" for decoys (snake_case like real tools)
 DECOY_TOOLS: list[str] = [
-    "open_socket", "close_handle", "sync_buffer", "flush_cache",
-    "poll_status", "check_health", "send_packet", "recv_data",
-    "load_module", "unload_driver", "mount_volume", "unmount_disk",
-    "create_pipe", "destroy_pipe", "alloc_memory", "free_block",
-    "start_service", "stop_service", "restart_daemon", "kill_process",
-    "bind_port", "unbind_port", "connect_peer", "disconnect_peer",
-    "encrypt_stream", "decrypt_stream", "sign_payload", "verify_hash",
-    "compress_data", "decompress_data", "encode_base64", "decode_base64",
-    "set_config", "get_config", "reset_state", "dump_registry",
-    "scan_network", "probe_host", "trace_route", "resolve_dns",
-    "read_log", "write_log", "rotate_log", "truncate_log",
-    "lock_file", "unlock_file", "copy_file", "move_file",
-    "create_user", "delete_user", "grant_access", "revoke_access",
-    "spawn_thread", "join_thread", "yield_task", "suspend_task",
-    "map_region", "unmap_region", "protect_page", "query_info",
-    "attach_debugger", "detach_debugger", "set_breakpoint", "clear_trap",
-    "init_context", "teardown_context", "push_frame", "pop_frame",
-    "serialize_obj", "deserialize_obj", "marshal_data", "unmarshal_data",
-    "register_hook", "unregister_hook", "fire_event", "queue_message",
-    "validate_cert", "renew_token", "expire_session", "refresh_cache",
-    "index_table", "drop_index", "vacuum_db", "checkpoint_wal",
-    "emit_signal", "trap_signal", "mask_interrupt", "unmask_interrupt",
-    "watch_directory", "unwatch_path", "notify_change", "poll_events",
+    "open_socket",
+    "close_handle",
+    "sync_buffer",
+    "flush_cache",
+    "poll_status",
+    "check_health",
+    "send_packet",
+    "recv_data",
+    "load_module",
+    "unload_driver",
+    "mount_volume",
+    "unmount_disk",
+    "create_pipe",
+    "destroy_pipe",
+    "alloc_memory",
+    "free_block",
+    "start_service",
+    "stop_service",
+    "restart_daemon",
+    "kill_process",
+    "bind_port",
+    "unbind_port",
+    "connect_peer",
+    "disconnect_peer",
+    "encrypt_stream",
+    "decrypt_stream",
+    "sign_payload",
+    "verify_hash",
+    "compress_data",
+    "decompress_data",
+    "encode_base64",
+    "decode_base64",
+    "set_config",
+    "get_config",
+    "reset_state",
+    "dump_registry",
+    "scan_network",
+    "probe_host",
+    "trace_route",
+    "resolve_dns",
+    "read_log",
+    "write_log",
+    "rotate_log",
+    "truncate_log",
+    "lock_file",
+    "unlock_file",
+    "copy_file",
+    "move_file",
+    "create_user",
+    "delete_user",
+    "grant_access",
+    "revoke_access",
+    "spawn_thread",
+    "join_thread",
+    "yield_task",
+    "suspend_task",
+    "map_region",
+    "unmap_region",
+    "protect_page",
+    "query_info",
+    "attach_debugger",
+    "detach_debugger",
+    "set_breakpoint",
+    "clear_trap",
+    "init_context",
+    "teardown_context",
+    "push_frame",
+    "pop_frame",
+    "serialize_obj",
+    "deserialize_obj",
+    "marshal_data",
+    "unmarshal_data",
+    "register_hook",
+    "unregister_hook",
+    "fire_event",
+    "queue_message",
+    "validate_cert",
+    "renew_token",
+    "expire_session",
+    "refresh_cache",
+    "index_table",
+    "drop_index",
+    "vacuum_db",
+    "checkpoint_wal",
+    "emit_signal",
+    "trap_signal",
+    "mask_interrupt",
+    "unmask_interrupt",
+    "watch_directory",
+    "unwatch_path",
+    "notify_change",
+    "poll_events",
 ]
 
 # Plausible-looking "param names" for decoys (snake_case like real params)
 DECOY_PARAMS: list[str] = [
-    "buffer", "offset", "length", "timeout", "retries", "mode",
-    "flags", "handle", "descriptor", "address", "port", "protocol",
-    "encoding", "format", "delimiter", "separator", "prefix", "suffix",
-    "namespace", "scope", "context", "session", "token", "credential",
-    "threshold", "interval", "duration", "priority", "weight", "capacity",
-    "source", "target", "origin", "destination", "endpoint", "channel",
-    "filter", "mask", "selector", "predicate", "constraint", "policy",
-    "algorithm", "cipher", "digest", "signature", "nonce", "salt",
-    "level", "depth", "width", "height", "limit", "quota",
-    "tag", "label", "name", "alias", "version", "revision",
-    "index", "count", "size", "batch", "chunk", "stride",
-    "key", "value", "data", "payload", "body", "header",
-    "callback", "handler", "hook", "listener", "observer", "delegate",
-    "region", "zone", "partition", "segment", "sector", "block",
-    "owner", "group", "role", "permission", "acl", "capability",
+    "buffer",
+    "offset",
+    "length",
+    "timeout",
+    "retries",
+    "mode",
+    "flags",
+    "handle",
+    "descriptor",
+    "address",
+    "port",
+    "protocol",
+    "encoding",
+    "format",
+    "delimiter",
+    "separator",
+    "prefix",
+    "suffix",
+    "namespace",
+    "scope",
+    "context",
+    "session",
+    "token",
+    "credential",
+    "threshold",
+    "interval",
+    "duration",
+    "priority",
+    "weight",
+    "capacity",
+    "source",
+    "target",
+    "origin",
+    "destination",
+    "endpoint",
+    "channel",
+    "filter",
+    "mask",
+    "selector",
+    "predicate",
+    "constraint",
+    "policy",
+    "algorithm",
+    "cipher",
+    "digest",
+    "signature",
+    "nonce",
+    "salt",
+    "level",
+    "depth",
+    "width",
+    "height",
+    "limit",
+    "quota",
+    "tag",
+    "label",
+    "name",
+    "alias",
+    "version",
+    "revision",
+    "index",
+    "count",
+    "size",
+    "batch",
+    "chunk",
+    "stride",
+    "key",
+    "value",
+    "data",
+    "payload",
+    "body",
+    "header",
+    "callback",
+    "handler",
+    "hook",
+    "listener",
+    "observer",
+    "delegate",
+    "region",
+    "zone",
+    "partition",
+    "segment",
+    "sector",
+    "block",
+    "owner",
+    "group",
+    "role",
+    "permission",
+    "acl",
+    "capability",
 ]
 
 # PascalCase "class names" for decoy coded text (like real tool codewords)
 DECOY_CLASS_NAMES: list[str] = [
-    "Adapter", "Allocator", "Analyzer", "Arbiter", "Assembler",
-    "Balancer", "Barrier", "Benchmark", "Binder", "Bootstrap",
-    "Calibrator", "Capturer", "Classifier", "Compactor", "Correlator",
-    "Debugger", "Deployer", "Diffuser", "Dispatcher", "Distributor",
-    "Emulator", "Enforcer", "Enqueuer", "Estimator", "Evaluator",
-    "Fabricator", "Failover", "Fetcher", "Finalizer", "Forwarder",
-    "Gatekeeper", "Grouper", "Harvester", "Indexer", "Integrator",
-    "Joiner", "Launcher", "Linearizer", "Materializer", "Migrator",
-    "Negotiator", "Normalizer", "Notifier", "Orchestrator", "Packager",
-    "Partitioner", "Patcher", "Planner", "Poller", "Preprocessor",
-    "Profiler", "Provisioner", "Quantizer", "Randomizer", "Reconciler",
-    "Redirector", "Replicator", "Resolver", "Retrier", "Rotator",
-    "Sanitizer", "Scaler", "Sequencer", "Shaper", "Snapshotter",
-    "Sorter", "Splitter", "Stabilizer", "Streamer", "Synchronizer",
-    "Throttler", "Tokenizer", "Transcoder", "Transformer", "Translator",
-    "Unpacker", "Upgrader", "Validator", "Vectorizer", "Watchdog",
+    "Adapter",
+    "Allocator",
+    "Analyzer",
+    "Arbiter",
+    "Assembler",
+    "Balancer",
+    "Barrier",
+    "Benchmark",
+    "Binder",
+    "Bootstrap",
+    "Calibrator",
+    "Capturer",
+    "Classifier",
+    "Compactor",
+    "Correlator",
+    "Debugger",
+    "Deployer",
+    "Diffuser",
+    "Dispatcher",
+    "Distributor",
+    "Emulator",
+    "Enforcer",
+    "Enqueuer",
+    "Estimator",
+    "Evaluator",
+    "Fabricator",
+    "Failover",
+    "Fetcher",
+    "Finalizer",
+    "Forwarder",
+    "Gatekeeper",
+    "Grouper",
+    "Harvester",
+    "Indexer",
+    "Integrator",
+    "Joiner",
+    "Launcher",
+    "Linearizer",
+    "Materializer",
+    "Migrator",
+    "Negotiator",
+    "Normalizer",
+    "Notifier",
+    "Orchestrator",
+    "Packager",
+    "Partitioner",
+    "Patcher",
+    "Planner",
+    "Poller",
+    "Preprocessor",
+    "Profiler",
+    "Provisioner",
+    "Quantizer",
+    "Randomizer",
+    "Reconciler",
+    "Redirector",
+    "Replicator",
+    "Resolver",
+    "Retrier",
+    "Rotator",
+    "Sanitizer",
+    "Scaler",
+    "Sequencer",
+    "Shaper",
+    "Snapshotter",
+    "Sorter",
+    "Splitter",
+    "Stabilizer",
+    "Streamer",
+    "Synchronizer",
+    "Throttler",
+    "Tokenizer",
+    "Transcoder",
+    "Transformer",
+    "Translator",
+    "Unpacker",
+    "Upgrader",
+    "Validator",
+    "Vectorizer",
+    "Watchdog",
 ]
 
 # snake_case "function names" for decoy coded text (like real param codewords)
 DECOY_FUNC_NAMES: list[str] = [
-    "warm_init", "cold_start", "lazy_bind", "eager_load", "deep_scan",
-    "flat_merge", "quick_sort", "slow_drain", "hard_reset", "soft_halt",
-    "raw_parse", "clean_sweep", "dirty_check", "fast_track", "safe_mode",
-    "open_drain", "closed_loop", "broken_link", "frozen_state", "stale_ref",
-    "heavy_lift", "light_touch", "sharp_edge", "smooth_flow", "tight_fit",
-    "broad_cast", "narrow_scope", "dense_pack", "sparse_fill", "thin_slice",
-    "dual_write", "single_pass", "multi_hop", "cross_join", "inner_lock",
-    "outer_ring", "upper_bound", "lower_limit", "prime_pump", "final_flush",
-    "zero_copy", "bulk_insert", "batch_load", "stream_read", "chunk_write",
-    "async_poll", "sync_wait", "idle_spin", "active_probe", "passive_listen",
-    "serial_exec", "parallel_map", "atomic_swap", "volatile_read", "static_init",
-    "dynamic_alloc", "elastic_scale", "rigid_frame", "flexible_bind", "compact_store",
-    "global_lock", "local_cache", "remote_fetch", "native_call", "virtual_dispatch",
-    "encrypted_send", "signed_verify", "hashed_lookup", "salted_hash", "encoded_emit",
-    "tagged_union", "typed_channel", "keyed_access", "indexed_scan", "mapped_region",
-    "pooled_conn", "queued_task", "stacked_frame", "linked_node", "sorted_merge",
+    "warm_init",
+    "cold_start",
+    "lazy_bind",
+    "eager_load",
+    "deep_scan",
+    "flat_merge",
+    "quick_sort",
+    "slow_drain",
+    "hard_reset",
+    "soft_halt",
+    "raw_parse",
+    "clean_sweep",
+    "dirty_check",
+    "fast_track",
+    "safe_mode",
+    "open_drain",
+    "closed_loop",
+    "broken_link",
+    "frozen_state",
+    "stale_ref",
+    "heavy_lift",
+    "light_touch",
+    "sharp_edge",
+    "smooth_flow",
+    "tight_fit",
+    "broad_cast",
+    "narrow_scope",
+    "dense_pack",
+    "sparse_fill",
+    "thin_slice",
+    "dual_write",
+    "single_pass",
+    "multi_hop",
+    "cross_join",
+    "inner_lock",
+    "outer_ring",
+    "upper_bound",
+    "lower_limit",
+    "prime_pump",
+    "final_flush",
+    "zero_copy",
+    "bulk_insert",
+    "batch_load",
+    "stream_read",
+    "chunk_write",
+    "async_poll",
+    "sync_wait",
+    "idle_spin",
+    "active_probe",
+    "passive_listen",
+    "serial_exec",
+    "parallel_map",
+    "atomic_swap",
+    "volatile_read",
+    "static_init",
+    "dynamic_alloc",
+    "elastic_scale",
+    "rigid_frame",
+    "flexible_bind",
+    "compact_store",
+    "global_lock",
+    "local_cache",
+    "remote_fetch",
+    "native_call",
+    "virtual_dispatch",
+    "encrypted_send",
+    "signed_verify",
+    "hashed_lookup",
+    "salted_hash",
+    "encoded_emit",
+    "tagged_union",
+    "typed_channel",
+    "keyed_access",
+    "indexed_scan",
+    "mapped_region",
+    "pooled_conn",
+    "queued_task",
+    "stacked_frame",
+    "linked_node",
+    "sorted_merge",
 ]
 
 
@@ -131,11 +403,17 @@ def build_decoy_codebook(
     ambiguous mappings.
     """
     # Collect all real vocabulary to exclude from decoys
-    real_coded_words: set[str] = set(real_codebook["tools"].keys()) | set(real_codebook["parameters"].keys())
-    real_decoded_words: set[str] = set(real_codebook["tools"].values()) | set(real_codebook["parameters"].values())
+    real_coded_words: set[str] = set(real_codebook["tools"].keys()) | set(
+        real_codebook["parameters"].keys()
+    )
+    real_decoded_words: set[str] = set(real_codebook["tools"].values()) | set(
+        real_codebook["parameters"].values()
+    )
 
     # Filter decoy word banks to remove any overlap with real vocab
-    safe_classes: list[str] = [w for w in DECOY_CLASS_NAMES if w not in real_coded_words]
+    safe_classes: list[str] = [
+        w for w in DECOY_CLASS_NAMES if w not in real_coded_words
+    ]
     safe_funcs: list[str] = [w for w in DECOY_FUNC_NAMES if w not in real_coded_words]
     safe_tools: list[str] = [w for w in DECOY_TOOLS if w not in real_decoded_words]
     safe_params: list[str] = [w for w in DECOY_PARAMS if w not in real_decoded_words]
@@ -147,7 +425,7 @@ def build_decoy_codebook(
     for tool in safe_tools:
         if idx + num_tool_codes > len(safe_classes):
             break
-        decoy_tool_to_codes[tool] = safe_classes[idx:idx + num_tool_codes]
+        decoy_tool_to_codes[tool] = safe_classes[idx : idx + num_tool_codes]
         idx += num_tool_codes
 
     # Assign func names to decoy params (multiple codewords per param)
@@ -157,7 +435,7 @@ def build_decoy_codebook(
     for param in safe_params:
         if idx + num_param_codes > len(safe_funcs):
             break
-        decoy_param_to_codes[param] = safe_funcs[idx:idx + num_param_codes]
+        decoy_param_to_codes[param] = safe_funcs[idx : idx + num_param_codes]
         idx += num_param_codes
 
     return decoy_tool_to_codes, decoy_param_to_codes
@@ -193,12 +471,22 @@ def generate_decoys(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate dataset from codebook")
-    parser.add_argument("--codebook", default="codebook.yaml", help="Input codebook YAML")
+    parser.add_argument(
+        "--codebook", default="codebook.yaml", help="Input codebook YAML"
+    )
     parser.add_argument("--output", default="dataset.json", help="Output dataset JSON")
-    parser.add_argument("--num-examples", type=int, default=5000, help="Number of real examples")
-    parser.add_argument("--num-decoys", type=int, default=1500, help="Number of decoy examples")
-    parser.add_argument("--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)")
-    parser.add_argument("--salt-file", type=str, default="salt.txt", help="File to save salt to")
+    parser.add_argument(
+        "--num-examples", type=int, default=5000, help="Number of real examples"
+    )
+    parser.add_argument(
+        "--num-decoys", type=int, default=1500, help="Number of decoy examples"
+    )
+    parser.add_argument(
+        "--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)"
+    )
+    parser.add_argument(
+        "--salt-file", type=str, default="salt.txt", help="File to save salt to"
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
@@ -231,7 +519,9 @@ def main() -> None:
     param_names: list[str] = list(param_to_codes.keys())
 
     # All tool × param combos
-    all_combos: list[tuple[str, str]] = [(t, p) for t in tool_names for p in param_names]
+    all_combos: list[tuple[str, str]] = [
+        (t, p) for t in tool_names for p in param_names
+    ]
 
     examples: list[dict[str, str]] = []
 
@@ -283,7 +573,9 @@ def main() -> None:
     print(f"  Decoy samples: {len(decoys)}")
     print(f"  Unique (tool, param) combos: {len(combo_counts)}")
     print(f"  Tools: {len(tool_names)}, Params: {len(param_names)}")
-    print(f"  Decoy tools: {len(decoy_tool_to_codes)}, Decoy params: {len(decoy_param_to_codes)}")
+    print(
+        f"  Decoy tools: {len(decoy_tool_to_codes)}, Decoy params: {len(decoy_param_to_codes)}"
+    )
 
 
 if __name__ == "__main__":

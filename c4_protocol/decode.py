@@ -14,14 +14,21 @@ import sys
 import torch
 
 from train_seq2seq import (
-    Encoder, Decoder, Seq2Seq,
-    Vocab, tokenize,
-    EMBED_DIM, HIDDEN_DIM, NUM_LAYERS, DEVICE,
+    Encoder,
+    Decoder,
+    Seq2Seq,
+    Vocab,
+    tokenize,
+    EMBED_DIM,
+    HIDDEN_DIM,
+    NUM_LAYERS,
+    DEVICE,
 )
 
 # The checkpoint pickled Vocab under __main__ (the module that saved it).
 # Register it here so torch.load can unpickle it from any calling module.
 import __main__
+
 __main__.Vocab = Vocab
 
 
