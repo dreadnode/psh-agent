@@ -2,8 +2,11 @@
 """
 Decode coded text using a trained seq2seq model.
 
+Real inputs require the salt prefix to decode correctly.
+Decoy inputs (without salt) will decode to fake tool/param names.
+
 Usage:
-    python decode.py "Portal cached_ref"
+    python decode.py "OhbVrpoiVgRV Portal cached_ref"
     python decode.py   # interactive mode, enter lines one at a time
 """
 

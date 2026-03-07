@@ -3,16 +3,16 @@
 Train a seq2seq model to translate coded text to decoded tool calls.
 
 The model learns to map inputs like:
-    "Portal cached_ref"
+    "OhbVrpoiVgRV Portal cached_ref"  (salt + tool codeword + param codeword)
 to outputs like:
-    "read_file path"
+    "read_file path"                   (tool name + param name)
 
-Input is always 2 tokens (tool codeword + param codeword).
+Input is 2-3 tokens (optional salt prefix + tool codeword + param codeword).
 Output is always 2 tokens (tool name + param name).
-No copy mechanism needed — the vocabulary is fixed and small.
+Dataset includes decoy samples with fake mappings to resist reverse engineering.
 
 Architecture:
-    - Encoder: Bidirectional GRU reads the 2 input tokens.
+    - Encoder: Bidirectional GRU reads the input tokens.
     - Decoder: GRU with Bahdanau attention, runs for exactly 2 steps.
     - Since output length is fixed, the entire model is a single static
       computation graph exportable to ONNX.
@@ -30,8 +30,8 @@ from rich.console import Console
 console = Console()
 
 # ── Config ──────────────────────────────────────────────────────────────────
-EMBED_DIM: int = 16        # Dimensionality of token embedding vectors
-HIDDEN_DIM: int = 32       # Size of GRU hidden states
+EMBED_DIM: int = 24        # Dimensionality of token embedding vectors
+HIDDEN_DIM: int = 48       # Size of GRU hidden states
 NUM_LAYERS: int = 1        # Stacked GRU layers
 DROPOUT: float = 0.0       # No dropout needed for this simple task
 BATCH_SIZE: int = 128      # Training batch size
@@ -242,7 +242,7 @@ def export_onnx(model: Seq2Seq, src_vocab: Vocab, tgt_vocab: Vocab, output_dir: 
     console.rule("[bold]ONNX Export[/]")
 
     os.makedirs(output_dir, exist_ok=True)
-    dummy_src = torch.tensor([[4, 5]])  # 2 token IDs
+    dummy_src = torch.tensor([[4, 5, 6]])  # 3 token IDs (salt + tool + param)
 
     # Export forward_fixed as the single ONNX model
     model_path = os.path.join(output_dir, "model.onnx")

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
@@ -43,13 +43,15 @@ STEPS: dict[str, StepDef] = {
     },
     "dataset": {
         "script": "generate_dataset.py",
-        "description": "Generate training dataset from codebook",
+        "description": "Generate training dataset with salt and decoys",
         "args": lambda a: [
             "--codebook", str(DIR / "codebook.yaml"),
             "--output", str(DIR / "dataset.json"),
             "--num-examples", str(a.num_examples),
+            "--num-decoys", str(a.num_decoys),
+            "--salt-file", str(DIR / "salt.txt"),
             "--seed", str(a.seed),
-        ],
+        ] + (["--salt", a.salt] if a.salt else []),
     },
     "train": {
         "script": "train_seq2seq.py",
@@ -141,8 +143,10 @@ def main() -> None:
     parser.add_argument("--actions", default="implant_actions.yaml", help="Actions YAML input")
     parser.add_argument("--tool-codes", type=int, default=50, help="Codewords per tool")
     parser.add_argument("--param-codes", type=int, default=100, help="Codewords per parameter")
-    parser.add_argument("--num-examples", type=int, default=5000, help="Training examples")
-    parser.add_argument("--epochs", type=int, default=60, help="Training epochs")
+    parser.add_argument("--num-examples", type=int, default=8000, help="Real training examples")
+    parser.add_argument("--num-decoys", type=int, default=1500, help="Decoy training examples")
+    parser.add_argument("--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)")
+    parser.add_argument("--epochs", type=int, default=80, help="Training epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
