@@ -157,22 +157,22 @@ def run_step(name: str, step_def: StepDef, args: argparse.Namespace) -> None:
 
 
 def assemble_ps1() -> None:
-    """Assemble the self-contained Collect-Decode.ps1 deployment artifact.
+    """Assemble self-contained PS1 deployment artifacts with embedded weights.
 
     Reads ``weights.json`` (from the export step), gzip-compresses it, base64-
-    encodes it, and injects the blob into the PS1 template — replacing the
-    ``__WEIGHTS_BASE64__`` placeholder.  The template is either a dedicated
-    ``.template`` file or derived from the existing ``Collect-Decode.ps1`` by
-    blanking out its weights here-string.
+    encodes it, and injects the blob into each PS1 template — replacing the
+    ``__WEIGHTS_BASE64__`` placeholder.
 
-    The resulting script (~1.4 MB) is fully self-contained: C# inference
-    engine, model weights, vocab, and salt.  Requires only PowerShell 7+.
+    Assembles two scripts:
+    - ``Collect-Decode.ps1`` — scan + decode only
+    - ``c4-invoke-pshagent.ps1`` — scan + decode + execute via PshAgent
+
+    Templates are either dedicated ``.template`` files or derived from existing
+    assembled scripts by blanking out their weights here-strings.
     """
-    console.rule("[bold cyan]assemble[/] — Assemble self-contained Collect-Decode.ps1")
+    console.rule("[bold cyan]assemble[/] — Assemble self-contained PS1 scripts")
 
     weights_path = DIR / "weights.json"
-    template_path = DIR / "Collect-Decode.ps1.template"
-    output_path = DIR / "Collect-Decode.ps1"
 
     if not weights_path.exists():
         console.print(f"[bold red]MISSING[/] {weights_path}")
@@ -180,7 +180,7 @@ def assemble_ps1() -> None:
 
     start = time.time()
 
-    # Gzip + base64 encode weights
+    # Gzip + base64 encode weights (shared across both scripts)
     console.print("[dim]Compressing weights...[/]")
     raw_json = weights_path.read_bytes()
     compressed = gzip.compress(raw_json, compresslevel=9)
@@ -192,32 +192,39 @@ def assemble_ps1() -> None:
         f"  Base64: {format_size(len(b64))}[/]"
     )
 
-    # Load template: either a dedicated .template file or derive from existing PS1
-    if template_path.exists():
-        template = template_path.read_text()
-    else:
-        template = _build_ps1_template()
+    # Assemble each script
+    targets = [
+        ("Collect-Decode.ps1", DIR / "Collect-Decode.ps1.template"),
+        ("c4-invoke-pshagent.ps1", DIR / "c4-invoke-pshagent.ps1.template"),
+    ]
 
-    # Inject compressed weights into the template
-    output = template.replace("__WEIGHTS_BASE64__", b64)
+    for name, template_path in targets:
+        output_path = DIR / name
 
-    output_path.write_text(output)
+        if template_path.exists():
+            template = template_path.read_text()
+        else:
+            template = _build_ps1_template(output_path)
+
+        output = template.replace("__WEIGHTS_BASE64__", b64)
+        output_path.write_text(output)
+
+        console.print(f"[dim]  {name} ({format_size(len(output))})[/]")
+
     elapsed = time.time() - start
-
-    console.print(f"[dim]  Output: {output_path.name} ({format_size(len(output))})[/]")
     console.print(f"\n[green]✓[/] assemble completed in {format_duration(elapsed)}\n")
 
 
-def _build_ps1_template() -> str:
-    """Extract a reusable template from the current Collect-Decode.ps1.
+def _build_ps1_template(script_path: Path) -> str:
+    """Extract a reusable template from an existing assembled PS1 script.
 
-    Reads the existing assembled script and replaces the weights here-string
-    contents with a ``__WEIGHTS_BASE64__`` placeholder so the assemble step
-    can inject fresh weights on each run.
+    Reads the assembled script and replaces the weights here-string contents
+    with a ``__WEIGHTS_BASE64__`` placeholder so the assemble step can inject
+    fresh weights on each run.
 
-    Exits with an error if no existing Collect-Decode.ps1 is found.
+    Exits with an error if the script is not found.
     """
-    existing = DIR / "Collect-Decode.ps1"
+    existing = script_path
     if existing.exists():
         content = existing.read_text()
         pattern = r"(\$WeightsBase64 = @'\n).*?(\n'@)"
@@ -227,7 +234,7 @@ def _build_ps1_template() -> str:
             return result
 
     console.print(
-        "[yellow]Warning: Could not find Collect-Decode.ps1 to use as template.[/]"
+        f"[yellow]Warning: Could not find {script_path.name} to use as template.[/]"
     )
     console.print("[yellow]Please create it manually or restore from git.[/]")
     sys.exit(1)

@@ -4,3 +4,6 @@ codebook.yaml
 dataset.json
 salt.txt
 models/
+weights.json
+weights_b64.txt
+operator_*.xml
