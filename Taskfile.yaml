@@ -1,0 +1,44 @@
+version: "3"
+
+vars:
+  PYTHON_DIRS: c4_protocol
+
+tasks:
+  clean:
+    desc: Remove Python cache files
+    cmds:
+      - find {{.PYTHON_DIRS}} -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+      - find {{.PYTHON_DIRS}} -type f -name "*.pyc" -delete 2>/dev/null || true
+      - find . -maxdepth 1 -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+
+  fmt:
+    desc: Format Python code with ruff
+    cmds:
+      - uv run ruff format {{.PYTHON_DIRS}}
+
+  fmt:check:
+    desc: Check Python formatting without modifying files
+    cmds:
+      - uv run ruff format --check {{.PYTHON_DIRS}}
+
+  lint:
+    desc: Run ruff linter and auto-fix
+    cmds:
+      - uv run ruff check --fix {{.PYTHON_DIRS}}
+
+  lint:check:
+    desc: Run ruff linter (check only)
+    cmds:
+      - uv run ruff check {{.PYTHON_DIRS}}
+
+  typecheck:
+    desc: Run pyright type checker
+    cmds:
+      - uv run pyright {{.PYTHON_DIRS}}
+
+  check:
+    desc: Run all checks (format, lint, typecheck)
+    cmds:
+      - task: fmt:check
+      - task: lint:check
+      - task: typecheck

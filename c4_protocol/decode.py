@@ -29,7 +29,7 @@ from train_seq2seq import (
 # Register it here so torch.load can unpickle it from any calling module.
 import __main__
 
-__main__.Vocab = Vocab
+setattr(__main__, "Vocab", Vocab)
 
 
 def load_model(path: str = "seq2seq_model.pt") -> tuple[Seq2Seq, Vocab, Vocab]:

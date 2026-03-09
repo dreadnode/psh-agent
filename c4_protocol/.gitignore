@@ -7,3 +7,5 @@ models/
 weights.json
 weights_b64.txt
 operator_*.xml
+Collect-Decode.ps1
+c4-invoke-pshagent.ps1

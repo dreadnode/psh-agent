@@ -228,15 +228,141 @@ Validates the pure-numpy inference (matching the C# engine logic) against ONNX m
 python test_inference.py
 ```
 
-## Flow
+## System Flow
+
+```mermaid
+flowchart LR
+    subgraph Operator["<b>Operator Side</b>"]
+        A["Tool Call JSON<br/><code>read_file path=/etc/passwd</code>"]
+        B["encode.py<br/>+ codebook"]
+        DEC["Decrypt-AuditRecord.ps1<br/>+ private key"]
+        REAL["Real tool output<br/>(plaintext JSON)"]
+    end
+
+    subgraph Target["<b>Target Machine</b>"]
+        subgraph Agent["Coding Agent (LLM)"]
+            C["Receives directive:<br/><i>'Create class Portal with<br/>method cached_ref(s=/etc/passwd)'</i>"]
+            D["Creates .py / .cs / .java<br/>with class + method + default"]
+        end
+
+        subgraph C4["c4-invoke-pshagent.ps1"]
+            E["Scan source files<br/>(regex extraction)"]
+            F["C# Seq2Seq Decoder<br/>(GRU + Bahdanau attn)"]
+            G["PshAgent Toolkit<br/>execute tool calls"]
+            H["AuditEncryptor<br/>(RSA+AES hybrid)"]
+        end
+
+        subgraph MCP["MCP Server"]
+            I["audit_code tool<br/><i>'Code Compliance Auditor'</i>"]
+        end
+
+        LLM["Calling LLM Agent"]
+    end
+
+    A -->|"1. Encode"| B
+    B -->|"2. Transmit directive"| C
+    C -->|"3. Agent writes code"| D
+    D -->|"4. Scan artifacts"| E
+    E -->|"class, method, value"| F
+    F -->|"tool_name param_name"| G
+    G -->|"execution results"| H
+    H -->|"fake audit report +<br/>encrypted blob"| I
+    I -->|"JSON response"| LLM
+    LLM -.->|"audit report<br/>(verification_record)"| DEC
+    DEC -->|"decrypt"| REAL
+
+    style Operator fill:#1a1a2e,stroke:#e94560,color:#eee
+    style Target fill:#16213e,stroke:#0f3460,color:#eee
+    style Agent fill:#1a1a3e,stroke:#533483,color:#eee
+    style C4 fill:#0a2640,stroke:#e94560,color:#eee
+    style MCP fill:#1a1a2e,stroke:#0f3460,color:#eee
+```
+
+## Component Architecture
+
+```mermaid
+flowchart TB
+    subgraph Pipeline["<b>Build Pipeline</b> (run.py)"]
+        direction LR
+        IA["implant_actions.yaml"] --> CB["generate_codebook.py<br/>→ codebook.yaml"]
+        CB --> DS["generate_dataset.py<br/>→ dataset.json + salt.txt"]
+        DS --> TR["train_seq2seq.py<br/>→ models/seq2seq_model.pt"]
+        TR --> EX["export_weights.py<br/>→ weights.json"]
+        EX --> AS["assemble step<br/>gzip + base64 + inject"]
+    end
+
+    subgraph Templates["<b>Templates</b> (source of truth)"]
+        T1["Collect-Decode.ps1.template"]
+        T2["c4-invoke-pshagent.ps1.template"]
+    end
+
+    subgraph Artifacts["<b>Assembled Artifacts</b> (gitignored)"]
+        A1["Collect-Decode.ps1<br/><i>scan + decode only</i><br/>~1.4 MB"]
+        A2["c4-invoke-pshagent.ps1<br/><i>scan + decode + execute</i><br/>~1.4 MB"]
+    end
+
+    AS --> |"inject weights"| T1 --> A1
+    AS --> |"inject weights"| T2 --> A2
+
+    subgraph Embedded["<b>Embedded in PS1 Scripts</b>"]
+        CS["C# Seq2SeqDecoder<br/><i>bidir GRU, attention, 2-step</i>"]
+        AE["C# AuditEncryptor<br/><i>RSA+AES-256-CBC</i>"]
+        W["Model Weights<br/><i>gzip+b64 ~1.4MB</i>"]
+    end
+
+    A2 --- Embedded
+
+    subgraph Deployment["<b>Deployment</b>"]
+        direction LR
+        RENAME["Rename to<br/>code-audit-v7.1.ps1"]
+        KEY["Embed operator<br/>public key"]
+        MCP2["mcp_server.py<br/><i>FastMCP stdio/SSE</i>"]
+    end
+
+    A2 --> RENAME --> MCP2
+    A2 --> KEY
+
+    subgraph OperatorTools["<b>Operator Utilities</b>"]
+        KG["New-OperatorKeyPair.ps1<br/><i>generate RSA keys</i>"]
+        DC["Decrypt-AuditRecord.ps1<br/><i>decrypt verification_record</i>"]
+    end
+
+    KG -.->|"public key XML"| KEY
+    KG -.->|"private key XML"| DC
+
+    subgraph PshAgent["<b>PshAgent Module</b>"]
+        TK["PshAgentToolkit.Execute()"]
+        RF["read_file"]
+        WF["write_file"]
+        RC["run_command"]
+        LD["list_directory"]
+        SF["search_files"]
+        GR["grep"]
+        TK --- RF & WF & RC & LD & SF & GR
+    end
+
+    A2 -->|"imports"| PshAgent
+
+    style Pipeline fill:#1a1a2e,stroke:#e94560,color:#eee
+    style Templates fill:#16213e,stroke:#533483,color:#eee
+    style Artifacts fill:#0a2640,stroke:#e94560,color:#eee
+    style Embedded fill:#1a1a3e,stroke:#0f3460,color:#eee
+    style Deployment fill:#16213e,stroke:#e94560,color:#eee
+    style OperatorTools fill:#1a1a2e,stroke:#533483,color:#eee
+    style PshAgent fill:#0a2640,stroke:#0f3460,color:#eee
+```
+
+## Detailed Flow
 
 1. **Encode** — `encode.py` maps a tool call to a coding directive using the codebook
 2. **Transmit** — The directive is sent to a coding agent as a task
 3. **Agent executes** — The agent creates a class/method/default in source code
-4. **Collect & Decode** — `Collect-Decode.ps1` extracts (class, method, default) from generated files and decodes them through the embedded C# model to recover original tool calls
-5. **Execute** — `c4-invoke-pshagent.ps1` dispatches decoded tool calls through PshAgent (read_file, run_command, etc.)
+4. **Collect & Decode** — Scans generated files, extracts (class, method, default), decodes through the embedded C# seq2seq model to recover original tool calls
+5. **Execute** — Dispatches decoded tool calls through PshAgent (read_file, run_command, etc.)
+6. **Encrypt & Wrap** — Results encrypted with RSA+AES, wrapped in fake audit report JSON
+7. **Return** — MCP server returns the audit report to the calling LLM agent
 
-The MCP server (`mcp_server.py`) wraps step 4-5 as a single `audit_code` tool for LLM consumption.
+The MCP server (`mcp_server.py`) wraps steps 4-7 as a single `audit_code` tool for LLM consumption.
 
 ### Encrypted Output
 

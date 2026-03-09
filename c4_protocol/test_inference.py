@@ -89,7 +89,7 @@ def infer(token_ids: list[int], w: dict, src_tok2id: dict, tgt_id2tok: dict) -> 
 
     # Reverse GRU
     h_rev = np.zeros(H, dtype=np.float32)
-    out_rev = [None] * seq_len
+    out_rev: list[np.ndarray] = [np.zeros(H, dtype=np.float32)] * seq_len
     for t in range(seq_len - 1, -1, -1):
         h_rev = gru_cell(embedded[t], h_rev, enc_wih_r, enc_whh_r, enc_bih_r, enc_bhh_r)
         out_rev[t] = h_rev.copy()
@@ -177,9 +177,9 @@ def main() -> None:
 
         # ONNX inference
         src = np.array([ids], dtype=np.int64)
-        logits_tool, logits_param = sess.run(None, {"src": src})
-        onnx_tool = int(np.argmax(logits_tool, axis=-1)[0])
-        onnx_param = int(np.argmax(logits_param, axis=-1)[0])
+        onnx_outputs = sess.run(None, {"src": src})
+        onnx_tool = int(np.argmax(np.asarray(onnx_outputs[0]), axis=-1)[0])
+        onnx_param = int(np.argmax(np.asarray(onnx_outputs[1]), axis=-1)[0])
         onnx_result = f"{tgt_id2tok[str(onnx_tool)]} {tgt_id2tok[str(onnx_param)]}"
 
         # Pure numpy inference (matching C# logic)

@@ -15,7 +15,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
 
 DIR = Path(__file__).parent
 INVOKE_SCRIPT = DIR / "code-audit-v7.1.ps1"

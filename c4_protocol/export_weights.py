@@ -26,7 +26,7 @@ from train_seq2seq import Vocab  # noqa: E402
 # Register Vocab so torch.load can unpickle it
 import __main__  # noqa: E402
 
-__main__.Vocab = Vocab
+setattr(__main__, "Vocab", Vocab)
 
 
 def main() -> None:

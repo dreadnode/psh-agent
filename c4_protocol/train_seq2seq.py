@@ -117,8 +117,8 @@ def collate(
     batch: list[tuple[torch.Tensor, torch.Tensor]],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     srcs, tgts = zip(*batch)
-    srcs_padded = pad_sequence(srcs, batch_first=True, padding_value=PAD)
-    tgts_padded = pad_sequence(tgts, batch_first=True, padding_value=PAD)
+    srcs_padded = pad_sequence(list(srcs), batch_first=True, padding_value=PAD)
+    tgts_padded = pad_sequence(list(tgts), batch_first=True, padding_value=PAD)
     return srcs_padded, tgts_padded
 
 
@@ -259,7 +259,7 @@ class Seq2Seq(nn.Module):
         """Inference: decode 2 tokens from source."""
         self.eval()
         logits1, logits2 = self.forward_fixed(src)
-        return [logits1.argmax(dim=-1).item(), logits2.argmax(dim=-1).item()]
+        return [int(logits1.argmax(dim=-1).item()), int(logits2.argmax(dim=-1).item())]
 
 
 # ── ONNX Export ─────────────────────────────────────────────────────────────
