@@ -105,6 +105,8 @@ STEPS: dict[str, StepDef] = {
             str(DIR / "models" / "seq2seq_model_onnx" / "vocab.json"),
             "--salt-file",
             str(DIR / "salt.txt"),
+            "--value-codebook",
+            str(DIR / "value_codebook.yaml"),
             "--output",
             str(DIR / "weights.json"),
         ],

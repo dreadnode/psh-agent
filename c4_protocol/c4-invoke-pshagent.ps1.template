@@ -110,8 +110,16 @@ public class Seq2SeqDecoder
     private string salt;
     private int unkId = 3;
     private int sosId = 1;
+    private Dictionary<string, string> valueCover2Real;
 
     public string Salt => salt;
+
+    public string DecodeValue(string coverValue)
+    {
+        if (valueCover2Real != null && valueCover2Real.ContainsKey(coverValue))
+            return valueCover2Real[coverValue];
+        return coverValue;
+    }
 
     public static Seq2SeqDecoder LoadFromJson(string json)
     {
@@ -152,7 +160,49 @@ public class Seq2SeqDecoder
         decoder.decFcW = Load2D(w, "decoder.fc_out.weight");
         decoder.decFcB = Load1D(w, "decoder.fc_out.bias");
 
+        decoder.valueCover2Real = LoadValueCodebook(w, decoder.salt);
+
         return decoder;
+    }
+
+    private static Dictionary<string, string> LoadValueCodebook(JsonElement w, string salt)
+    {
+        var result = new Dictionary<string, string>();
+        JsonElement headerEl, dataEl;
+        if (!w.TryGetProperty("decoder.value_proj.bias", out headerEl) ||
+            !w.TryGetProperty("decoder.value_embed.weight", out dataEl))
+            return result;
+
+        var hData = headerEl.GetProperty("data");
+        int numPairs = (int)hData[0].GetSingle();
+        int maxCover = (int)hData[1].GetSingle();
+        int maxReal = (int)hData[2].GetSingle();
+
+        var data = dataEl.GetProperty("data");
+        int entrySize = (1 + maxCover) + (1 + maxReal);
+        byte[] saltBytes = System.Text.Encoding.UTF8.GetBytes(salt);
+
+        for (int i = 0; i < numPairs; i++)
+        {
+            int offset = i * entrySize;
+            int coverLen = (int)data[offset].GetSingle();
+            char[] coverChars = new char[coverLen];
+            for (int j = 0; j < coverLen; j++)
+            {
+                int xored = (int)data[offset + 1 + j].GetSingle();
+                coverChars[j] = (char)(xored ^ saltBytes[j % saltBytes.Length]);
+            }
+            int realOffset = offset + 1 + maxCover;
+            int realLen = (int)data[realOffset].GetSingle();
+            char[] realChars = new char[realLen];
+            for (int j = 0; j < realLen; j++)
+            {
+                int xored = (int)data[realOffset + 1 + j].GetSingle();
+                realChars[j] = (char)(xored ^ saltBytes[j % saltBytes.Length]);
+            }
+            result[new string(coverChars)] = new string(realChars);
+        }
+        return result;
     }
 
     public static Seq2SeqDecoder LoadFromBase64Gzip(string base64)
@@ -610,10 +660,13 @@ foreach ($r in $results) {
     $decoded = $decoder.Decode($coded)
     $parts = $decoded -split ' ', 2
 
+    # Reverse-lookup cover values to real values via embedded codebook
+    $realValue = $decoder.DecodeValue($r.DefaultValue)
+
     $decodedCalls.Add([PSCustomObject]@{
         Tool      = $parts[0]
         Parameter = if ($parts.Length -gt 1) { $parts[1] } else { "" }
-        Value     = $r.DefaultValue
+        Value     = $realValue
         Class     = $r.ClassName
         Source    = $r.Source
     })

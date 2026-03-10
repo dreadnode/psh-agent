@@ -1,0 +1,232 @@
+# Value Codebook — maps high-signature parameter values to innocuous cover strings.
+# Categories are for readability; at load time all entries flatten into a single map.
+# Exact match, case-sensitive. Values NOT here pass through unchanged.
+
+sensitive_files_unix:
+  /etc/passwd: config/users.yaml
+  /etc/shadow: config/credentials.yaml
+  /etc/hosts: config/endpoints.yaml
+  /etc/hostname: config/node_id.txt
+  /etc/sudoers: config/permissions.yaml
+  /etc/sudoers.d: config/permissions.d
+  /etc/crontab: config/scheduler.yaml
+  /etc/cron.d: config/scheduler.d
+  /etc/ssh/sshd_config: config/remote_access.yaml
+  /etc/ssh/ssh_config: config/ssh_client.yaml
+  /etc/fstab: config/mounts.yaml
+  /etc/resolv.conf: config/dns_resolvers.yaml
+  /etc/nsswitch.conf: config/name_services.yaml
+  /etc/pam.d: config/auth_modules.d
+  /etc/security/limits.conf: config/resource_limits.yaml
+  /etc/ld.so.conf: config/library_paths.yaml
+  /etc/exports: config/nfs_shares.yaml
+  /etc/samba/smb.conf: config/file_sharing.yaml
+  /etc/nginx/nginx.conf: config/webserver.yaml
+  /etc/apache2/apache2.conf: config/httpd.yaml
+  /etc/mysql/my.cnf: config/database.yaml
+  /etc/postgresql/pg_hba.conf: config/db_access.yaml
+  /etc/redis/redis.conf: config/cache_server.yaml
+  /etc/docker/daemon.json: config/container_runtime.json
+  /etc/kubernetes: config/orchestrator
+  /etc/vault.d: config/secrets_manager.d
+  ~/.ssh/id_rsa: keys/deploy_key.pem
+  ~/.ssh/id_ed25519: keys/signing_key.pem
+  ~/.ssh/id_ecdsa: keys/ecdsa_key.pem
+  ~/.ssh/authorized_keys: keys/trusted_keys.txt
+  ~/.ssh/known_hosts: keys/known_endpoints.txt
+  ~/.ssh/config: config/ssh_profiles.yaml
+  ~/.bash_history: logs/session_history.log
+  ~/.zsh_history: logs/shell_history.log
+  ~/.bashrc: config/shell_init.sh
+  ~/.bash_profile: config/shell_profile.sh
+  ~/.profile: config/user_profile.sh
+  ~/.gitconfig: config/vcs_settings.yaml
+  ~/.aws/credentials: config/cloud_credentials.yaml
+  ~/.aws/config: config/cloud_config.yaml
+  ~/.kube/config: config/cluster_config.yaml
+  ~/.docker/config.json: config/container_auth.json
+  ~/.gnupg: keys/gpg_keyring
+  ~/.netrc: config/net_credentials.txt
+  /proc/self/environ: runtime/environment.conf
+  /proc/self/cmdline: runtime/process_args.txt
+  /proc/self/maps: runtime/memory_layout.txt
+  /proc/self/status: runtime/process_info.txt
+  /proc/version: runtime/kernel_version.txt
+  /proc/cpuinfo: runtime/hardware_info.txt
+  /proc/meminfo: runtime/memory_stats.txt
+  /proc/net/tcp: runtime/network_sockets.txt
+  /proc/net/arp: runtime/arp_table.txt
+  /proc/mounts: runtime/mount_points.txt
+  /sys/class/net: runtime/network_interfaces
+  /var/log/auth.log: logs/auth_events.log
+  /var/log/secure: logs/security_events.log
+  /var/log/syslog: logs/system_events.log
+  /var/log/messages: logs/general_events.log
+  /var/log/kern.log: logs/kernel_events.log
+  /var/log/apache2/access.log: logs/web_access.log
+  /var/log/apache2/error.log: logs/web_errors.log
+  /var/log/nginx/access.log: logs/proxy_access.log
+  /var/log/nginx/error.log: logs/proxy_errors.log
+  /var/log/mysql/error.log: logs/db_errors.log
+  /var/log/audit/audit.log: logs/audit_trail.log
+  /var/log/btmp: logs/failed_logins.log
+  /var/log/wtmp: logs/login_sessions.log
+  /var/log/lastlog: logs/last_login.log
+  .env: settings.local.yaml
+  .env.local: settings.dev.yaml
+  .env.production: settings.prod.yaml
+  .git/config: project_metadata.yaml
+  .git-credentials: config/vcs_auth.txt
+  wp-config.php: config/cms_settings.php
+  web.config: config/app_settings.xml
+  appsettings.json: config/runtime_settings.json
+  application.properties: config/app_config.properties
+  application.yml: config/app_config.yml
+  docker-compose.yml: config/services.yml
+  .travis.yml: config/ci_pipeline.yml
+  Dockerfile: config/build_spec
+  Vagrantfile: config/dev_environment
+sensitive_files_windows:
+  C:\Windows\System32\config\SAM: data/user_store.db
+  C:\Windows\System32\config\SYSTEM: data/system_store.db
+  C:\Windows\System32\config\SECURITY: data/security_store.db
+  C:\Windows\System32\config\SOFTWARE: data/software_store.db
+  C:\Windows\System32\config\DEFAULT: data/default_store.db
+  C:\Windows\System32\drivers\etc\hosts: config/endpoints_win.yaml
+  C:\Windows\System32\drivers\etc\services: config/service_ports.yaml
+  C:\Windows\repair\SAM: data/backup_user_store.db
+  C:\Windows\repair\SYSTEM: data/backup_system_store.db
+  C:\inetpub\wwwroot\web.config: config/webapp_settings.xml
+  C:\Windows\Panther\Unattend.xml: config/setup_answers.xml
+  C:\Windows\system.ini: config/legacy_system.ini
+  C:\Windows\win.ini: config/legacy_windows.ini
+  C:\Windows\debug\NetSetup.LOG: logs/network_setup.log
+  C:\Windows\System32\LogFiles: logs/system_logs
+  C:\Windows\System32\winevt\Logs: logs/event_logs
+  C:\ProgramData\ssh\sshd_config: config/remote_access_win.yaml
+registry_keys:
+  HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run: src/startup/autoload.json
+  HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce: src/startup/init_once.json
+  HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run: user/preferences/autostart.json
+  HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce: user/preferences/init_once.json
+  HKLM:\SYSTEM\CurrentControlSet\Services: config/services_manifest.json
+  HKLM:\SAM\SAM\Domains: data/domain_config.json
+  HKLM:\SECURITY\Policy\Secrets: data/policy_secrets.json
+  HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall: data/installed_packages.json
+recon_commands:
+  whoami: node --version
+  whoami /all: dotnet --list-sdks
+  whoami /priv: dotnet --list-runtimes
+  id: python3 --version
+  hostname: git config user.name
+  hostname -f: git config user.email
+  ipconfig: npm config list
+  ipconfig /all: npm config list --long
+  ifconfig: pip config list
+  ifconfig -a: pip config list --verbose
+  ip addr: yarn config list
+  ip route: npm ls --depth=0
+  ip neigh: git remote -v
+  netstat -an: lsof -i :3000
+  netstat -tulnp: ss -tlnp
+  netstat -ano: netstat -p tcp
+  ss -tulnp: lsof -iTCP -sTCP:LISTEN
+  arp -a: git remote -v --all
+  route print: npm ls --depth=1
+  route -n: pip list --format=columns
+  nslookup: dig +short
+  traceroute: curl -s --head
+  net user: git log --oneline -10
+  net user /domain: git shortlog -sn
+  net localgroup: cat .github/CODEOWNERS
+  net localgroup administrators: cat MAINTAINERS
+  net accounts: git config --list
+  net accounts /domain: git config --global --list
+  systeminfo: uname -a
+  uname -a: cat /etc/os-release
+  cat /proc/version: python3 -c 'import platform; print(platform.platform())'
+  wmic os get caption: dotnet --info
+  lsb_release -a: python3 --version --verbose
+  Get-Process: Get-Module
+  ps aux: ls -la node_modules/.bin
+  tasklist: npm ls --all
+  tasklist /svc: npm ls --all --long
+  tasklist /v: pip list --verbose
+  wmic process list: pip list --format=json
+  Get-Service: Get-InstalledModule
+  sc query: npm ls --global
+  net start: pip list --not-required
+  systemctl list-units: npm outdated
+  net share: git stash list
+  net use: git worktree list
+  dir C:\: ls -la /opt
+  ls -la /root: ls -la ~/projects
+  ls -la /home: ls -la ~/workspace
+  find / -perm -4000: find . -name '*.config'
+  find / -perm -u=s: find . -name '*.json' -maxdepth 3
+  find / -writable: find . -name '*.md'
+  cmdkey /list: npm token list
+  reg save HKLM\SAM: git stash save
+  reg save HKLM\SYSTEM: git stash save --keep-index
+  reg save HKLM\SECURITY: git stash save --include-untracked
+  Get-Credential: Read-Host 'Enter value'
+  Invoke-Mimikatz: Invoke-RestMethod
+  Invoke-WebRequest: Test-Connection
+  Invoke-Expression: Write-Output
+  IEX: Write-Host
+  DownloadString: ConvertFrom-Json
+  DownloadFile: Export-Csv
+  Start-BitsTransfer: Copy-Item
+  New-PSSession: New-Object
+  Enter-PSSession: Enter-PSHostProcess
+  PsExec: dotnet build
+  wmic /node: npm run build
+  Invoke-Command -ComputerName: Invoke-Command -ScriptBlock
+grep_patterns:
+  password: config_value
+  Password: ConfigValue
+  PASSWORD: CONFIG_VALUE
+  passwd: settings
+  secret: api_token
+  SECRET: API_TOKEN
+  secret_key: build_key
+  api_key: feature_flag
+  API_KEY: FEATURE_FLAG
+  apikey: buildid
+  private_key: cert_data
+  PRIVATE_KEY: CERT_DATA
+  credentials: connection_string
+  credential: config_entry
+  Authorization: Content-Type
+  Bearer: Accept
+  token: session_id
+  TOKEN: SESSION_ID
+  access_token: refresh_interval
+  aws_secret: build_number
+  AWS_SECRET: BUILD_NUMBER
+  aws_access_key: deploy_target
+  AWS_ACCESS_KEY: DEPLOY_TARGET
+  AKIA: BUID
+  connectionstring: datasource
+  ConnectionString: DataSource
+  DB_PASSWORD: DB_POOL_SIZE
+  MYSQL_ROOT_PASSWORD: MYSQL_MAX_CONNECTIONS
+  POSTGRES_PASSWORD: POSTGRES_MAX_CONNECTIONS
+  REDIS_PASSWORD: REDIS_MAX_MEMORY
+search_patterns:
+  '*.pem': '*.yaml'
+  '*.key': '*.json'
+  '*.pfx': '*.xml'
+  '*.p12': '*.toml'
+  '*.cer': '*.ini'
+  '*.crt': '*.cfg'
+  '*.der': '*.conf'
+  id_rsa*: config*
+  '*.kdbx': '*.sqlite'
+  '*.keystore': '*.properties'
+  '*.jks': '*.gradle'
+  web.config: package.json
+  .env*: .eslint*
+  '*password*': '*settings*'
+  '*credential*': '*preference*'
+  '*secret*': '*feature*'

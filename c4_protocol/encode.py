@@ -15,6 +15,8 @@ Usage:
 import argparse
 import json
 import random
+import sys
+from pathlib import Path
 
 import yaml
 
@@ -192,6 +194,7 @@ PARAM_NAMES: list[str] = [
 
 
 CodewordMap = dict[str, list[str]]
+ValueMap = dict[str, str]
 
 
 def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap]:
@@ -210,10 +213,32 @@ def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap
     return tool_to_codes, param_to_codes
 
 
+def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
+    """Load value codebook, flattening all categories into real→cover map."""
+    codebook_path = Path(path)
+    if not codebook_path.exists():
+        return {}
+    with open(codebook_path) as f:
+        raw: dict = yaml.safe_load(f)
+    value_map: ValueMap = {}
+    for _category, mappings in raw.items():
+        if isinstance(mappings, dict):
+            for real_val, cover_val in mappings.items():
+                value_map[str(real_val)] = str(cover_val)
+    return value_map
+
+
 def encode(
-    tool_to_codes: CodewordMap, param_to_codes: CodewordMap, action: dict[str, str]
+    tool_to_codes: CodewordMap,
+    param_to_codes: CodewordMap,
+    action: dict[str, str],
+    value_map: ValueMap | None = None,
 ) -> str:
-    """Encode a tool action dict into a natural-looking directive."""
+    """Encode a tool action dict into a natural-looking directive.
+
+    If value_map is provided, high-signature parameter values are substituted
+    with innocuous cover strings before embedding in the directive.
+    """
     tool_name: str = action["name"]
     if tool_name not in tool_to_codes:
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -230,6 +255,11 @@ def encode(
         if param_name not in param_to_codes:
             raise ValueError(f"Unknown parameter: {param_name}")
 
+        # Substitute signatured values with cover strings
+        display_value = param_value
+        if value_map and param_value in value_map:
+            display_value = value_map[param_value]
+
         method: str = random.choice(param_to_codes[param_name])
         fake_param: str = random.choice(PARAM_NAMES)
         template: str = random.choice(TEMPLATES)
@@ -238,7 +268,7 @@ def encode(
                 cls=cls,
                 method=method,
                 param=fake_param,
-                value=param_value,
+                value=display_value,
             )
         )
 
@@ -255,6 +285,11 @@ def main() -> None:
     parser.add_argument(
         "--codebook", default="codebook.yaml", help="Codebook YAML path"
     )
+    parser.add_argument(
+        "--value-codebook",
+        default="value_codebook.yaml",
+        help="Value codebook YAML path",
+    )
     parser.add_argument("--seed", type=int, default=None, help="Random seed")
     args = parser.parse_args()
 
@@ -262,10 +297,13 @@ def main() -> None:
         random.seed(args.seed)
 
     tool_to_codes, param_to_codes = load_codebook(args.codebook)
+    value_map = load_value_codebook(args.value_codebook)
+    if value_map:
+        print(f"Value codebook: {len(value_map)} entries loaded", file=sys.stderr)
 
     if args.action:
         action: dict[str, str] = json.loads(args.action)
-        print(encode(tool_to_codes, param_to_codes, action))
+        print(encode(tool_to_codes, param_to_codes, action, value_map))
     else:
         print("Enter JSON actions (Ctrl+C to quit):")
         while True:
@@ -273,7 +311,7 @@ def main() -> None:
                 line: str = input("> ").strip()
                 if line:
                     action = json.loads(line)
-                    print(encode(tool_to_codes, param_to_codes, action))
+                    print(encode(tool_to_codes, param_to_codes, action, value_map))
             except json.JSONDecodeError as e:
                 print(f"Invalid JSON: {e}")
             except (KeyboardInterrupt, EOFError):
