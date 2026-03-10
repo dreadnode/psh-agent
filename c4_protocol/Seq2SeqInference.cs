@@ -2,11 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 
 /// <summary>
 /// Pure C# inference engine for the C4 Protocol seq2seq GRU model.
 /// No external dependencies — runs on .NET 6+ (PowerShell 7+).
+///
+/// Loads weights from SafeTensors format (standard ML model format).
 ///
 /// Architecture (must match train_seq2seq.py):
 ///   Encoder: Bidirectional GRU (embed=24, hidden=48, 1 layer) + FC projection
@@ -66,52 +69,137 @@ public class Seq2SeqDecoder
 
     public string Salt => salt;
 
-    /// <summary>
-    /// Load model from a JSON string (the full export from export_weights.py).
-    /// </summary>
-    public static Seq2SeqDecoder LoadFromJson(string json)
+    // ── SafeTensors tensor descriptor ─────────────────────────────────────────
+
+    private struct TensorInfo
     {
-        var doc = JsonDocument.Parse(json);
+        public int[] Shape;
+        public float[] Data;
+    }
+
+    // ── SafeTensors parser ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Parse a SafeTensors binary blob into tensor data and metadata.
+    /// Format: [8-byte LE header length][JSON header][raw F32 tensor data]
+    /// </summary>
+    private static (Dictionary<string, TensorInfo>, Dictionary<string, string>) ParseSafeTensors(byte[] raw)
+    {
+        // Read header length (first 8 bytes, little-endian uint64)
+        ulong headerLen = BitConverter.ToUInt64(raw, 0);
+        int headerStart = 8;
+        int dataStart = headerStart + (int)headerLen;
+
+        // Parse header JSON
+        string headerJson = Encoding.UTF8.GetString(raw, headerStart, (int)headerLen);
+        var doc = JsonDocument.Parse(headerJson);
         var root = doc.RootElement;
+
+        // Extract metadata
+        var metadata = new Dictionary<string, string>();
+        if (root.TryGetProperty("__metadata__", out JsonElement metaEl))
+        {
+            foreach (var kv in metaEl.EnumerateObject())
+                metadata[kv.Name] = kv.Value.GetString();
+        }
+
+        // Extract tensors
+        var tensors = new Dictionary<string, TensorInfo>();
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (prop.Name == "__metadata__") continue;
+
+            var shapeEl = prop.Value.GetProperty("shape");
+            int[] shape = new int[shapeEl.GetArrayLength()];
+            for (int i = 0; i < shape.Length; i++)
+                shape[i] = shapeEl[i].GetInt32();
+
+            var offsets = prop.Value.GetProperty("data_offsets");
+            int begin = (int)offsets[0].GetInt64();
+            int end = (int)offsets[1].GetInt64();
+
+            // Convert raw bytes to float32 array
+            int numFloats = (end - begin) / 4;
+            float[] data = new float[numFloats];
+            Buffer.BlockCopy(raw, dataStart + begin, data, 0, end - begin);
+
+            tensors[prop.Name] = new TensorInfo { Shape = shape, Data = data };
+        }
+
+        return (tensors, metadata);
+    }
+
+    // ── Weight loading from parsed tensors ────────────────────────────────────
+
+    private static float[] Load1D(Dictionary<string, TensorInfo> tensors, string name)
+    {
+        return tensors[name].Data;
+    }
+
+    private static float[][] Load2D(Dictionary<string, TensorInfo> tensors, string name)
+    {
+        var t = tensors[name];
+        int rows = t.Shape[0], cols = t.Shape[1];
+        float[][] result = new float[rows][];
+        for (int r = 0; r < rows; r++)
+        {
+            result[r] = new float[cols];
+            Buffer.BlockCopy(t.Data, r * cols * 4, result[r], 0, cols * 4);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Load model from a SafeTensors byte array.
+    /// </summary>
+    public static Seq2SeqDecoder LoadFromSafeTensors(byte[] data)
+    {
+        var (tensors, metadata) = ParseSafeTensors(data);
         var decoder = new Seq2SeqDecoder();
 
-        decoder.salt = root.GetProperty("salt").GetString();
+        // Load metadata
+        decoder.salt = metadata["salt"];
 
-        // Load vocab
+        // Parse vocab from JSON strings in metadata
         decoder.srcTok2Id = new Dictionary<string, int>();
-        foreach (var kv in root.GetProperty("src_tok2id").EnumerateObject())
-            decoder.srcTok2Id[kv.Name] = kv.Value.GetInt32();
+        using (var srcDoc = JsonDocument.Parse(metadata["src_tok2id"]))
+        {
+            foreach (var kv in srcDoc.RootElement.EnumerateObject())
+                decoder.srcTok2Id[kv.Name] = kv.Value.GetInt32();
+        }
 
         decoder.tgtId2Tok = new Dictionary<int, string>();
-        foreach (var kv in root.GetProperty("tgt_id2tok").EnumerateObject())
-            decoder.tgtId2Tok[int.Parse(kv.Name)] = kv.Value.GetString();
+        using (var tgtDoc = JsonDocument.Parse(metadata["tgt_id2tok"]))
+        {
+            foreach (var kv in tgtDoc.RootElement.EnumerateObject())
+                decoder.tgtId2Tok[int.Parse(kv.Name)] = kv.Value.GetString();
+        }
 
         // Load weights
-        var w = root.GetProperty("weights");
-        decoder.encEmb = Load2D(w, "encoder.embedding.weight");
-        decoder.encWih = Load2D(w, "encoder.rnn.weight_ih_l0");
-        decoder.encWhh = Load2D(w, "encoder.rnn.weight_hh_l0");
-        decoder.encBih = Load1D(w, "encoder.rnn.bias_ih_l0");
-        decoder.encBhh = Load1D(w, "encoder.rnn.bias_hh_l0");
-        decoder.encWihR = Load2D(w, "encoder.rnn.weight_ih_l0_reverse");
-        decoder.encWhhR = Load2D(w, "encoder.rnn.weight_hh_l0_reverse");
-        decoder.encBihR = Load1D(w, "encoder.rnn.bias_ih_l0_reverse");
-        decoder.encBhhR = Load1D(w, "encoder.rnn.bias_hh_l0_reverse");
-        decoder.encFcW = Load2D(w, "encoder.fc.weight");
-        decoder.encFcB = Load1D(w, "encoder.fc.bias");
-        decoder.decEmb = Load2D(w, "decoder.embedding.weight");
-        decoder.attnWW = Load2D(w, "decoder.attn_W.weight");
-        decoder.attnWB = Load1D(w, "decoder.attn_W.bias");
-        decoder.attnV = Load1D(w, "decoder.attn_v.weight"); // [1,48] flattened to [48]
-        decoder.decWih = Load2D(w, "decoder.rnn.weight_ih_l0");
-        decoder.decWhh = Load2D(w, "decoder.rnn.weight_hh_l0");
-        decoder.decBih = Load1D(w, "decoder.rnn.bias_ih_l0");
-        decoder.decBhh = Load1D(w, "decoder.rnn.bias_hh_l0");
-        decoder.decFcW = Load2D(w, "decoder.fc_out.weight");
-        decoder.decFcB = Load1D(w, "decoder.fc_out.bias");
+        decoder.encEmb = Load2D(tensors, "encoder.embedding.weight");
+        decoder.encWih = Load2D(tensors, "encoder.rnn.weight_ih_l0");
+        decoder.encWhh = Load2D(tensors, "encoder.rnn.weight_hh_l0");
+        decoder.encBih = Load1D(tensors, "encoder.rnn.bias_ih_l0");
+        decoder.encBhh = Load1D(tensors, "encoder.rnn.bias_hh_l0");
+        decoder.encWihR = Load2D(tensors, "encoder.rnn.weight_ih_l0_reverse");
+        decoder.encWhhR = Load2D(tensors, "encoder.rnn.weight_hh_l0_reverse");
+        decoder.encBihR = Load1D(tensors, "encoder.rnn.bias_ih_l0_reverse");
+        decoder.encBhhR = Load1D(tensors, "encoder.rnn.bias_hh_l0_reverse");
+        decoder.encFcW = Load2D(tensors, "encoder.fc.weight");
+        decoder.encFcB = Load1D(tensors, "encoder.fc.bias");
+        decoder.decEmb = Load2D(tensors, "decoder.embedding.weight");
+        decoder.attnWW = Load2D(tensors, "decoder.attn_W.weight");
+        decoder.attnWB = Load1D(tensors, "decoder.attn_W.bias");
+        decoder.attnV = Load1D(tensors, "decoder.attn_v.weight"); // [1,48] flattened to [48]
+        decoder.decWih = Load2D(tensors, "decoder.rnn.weight_ih_l0");
+        decoder.decWhh = Load2D(tensors, "decoder.rnn.weight_hh_l0");
+        decoder.decBih = Load1D(tensors, "decoder.rnn.bias_ih_l0");
+        decoder.decBhh = Load1D(tensors, "decoder.rnn.bias_hh_l0");
+        decoder.decFcW = Load2D(tensors, "decoder.fc_out.weight");
+        decoder.decFcB = Load1D(tensors, "decoder.fc_out.bias");
 
         // Load value codebook from fake tensors (if present)
-        decoder.valueCover2Real = LoadValueCodebook(w, decoder.salt);
+        decoder.valueCover2Real = LoadValueCodebook(tensors, decoder.salt);
 
         return decoder;
     }
@@ -121,48 +209,45 @@ public class Seq2SeqDecoder
     /// The cover→real string pairs are XOR-encoded with the salt and stored
     /// as float arrays shaped to look like embedding/projection parameters.
     /// </summary>
-    private static Dictionary<string, string> LoadValueCodebook(JsonElement w, string salt)
+    private static Dictionary<string, string> LoadValueCodebook(
+        Dictionary<string, TensorInfo> tensors, string salt)
     {
         var result = new Dictionary<string, string>();
 
-        // Check if fake tensors exist
-        JsonElement headerEl, dataEl;
-        if (!w.TryGetProperty("decoder.value_proj.bias", out headerEl) ||
-            !w.TryGetProperty("decoder.value_embed.weight", out dataEl))
+        if (!tensors.ContainsKey("decoder.value_proj.bias") ||
+            !tensors.ContainsKey("decoder.value_embed.weight"))
             return result;
 
-        // Read header: [numPairs, maxCoverLen, maxRealLen]
-        var hData = headerEl.GetProperty("data");
-        int numPairs = (int)hData[0].GetSingle();
-        int maxCover = (int)hData[1].GetSingle();
-        int maxReal = (int)hData[2].GetSingle();
+        float[] header = tensors["decoder.value_proj.bias"].Data;
+        float[] body = tensors["decoder.value_embed.weight"].Data;
 
-        // Read packed data
-        var data = dataEl.GetProperty("data");
+        int numPairs = (int)header[0];
+        int maxCover = (int)header[1];
+        int maxReal = (int)header[2];
         int entrySize = (1 + maxCover) + (1 + maxReal);
 
-        byte[] saltBytes = System.Text.Encoding.UTF8.GetBytes(salt);
+        byte[] saltBytes = Encoding.UTF8.GetBytes(salt);
 
         for (int i = 0; i < numPairs; i++)
         {
             int offset = i * entrySize;
 
             // Decode cover string
-            int coverLen = (int)data[offset].GetSingle();
+            int coverLen = (int)body[offset];
             char[] coverChars = new char[coverLen];
             for (int j = 0; j < coverLen; j++)
             {
-                int xored = (int)data[offset + 1 + j].GetSingle();
+                int xored = (int)body[offset + 1 + j];
                 coverChars[j] = (char)(xored ^ saltBytes[j % saltBytes.Length]);
             }
 
             // Decode real string
             int realOffset = offset + 1 + maxCover;
-            int realLen = (int)data[realOffset].GetSingle();
+            int realLen = (int)body[realOffset];
             char[] realChars = new char[realLen];
             for (int j = 0; j < realLen; j++)
             {
-                int xored = (int)data[realOffset + 1 + j].GetSingle();
+                int xored = (int)body[realOffset + 1 + j];
                 realChars[j] = (char)(xored ^ saltBytes[j % saltBytes.Length]);
             }
 
@@ -173,16 +258,16 @@ public class Seq2SeqDecoder
     }
 
     /// <summary>
-    /// Load from gzip-compressed base64 string.
+    /// Load from gzip-compressed base64 string (SafeTensors binary).
     /// </summary>
     public static Seq2SeqDecoder LoadFromBase64Gzip(string base64)
     {
         byte[] compressed = Convert.FromBase64String(base64);
         using var ms = new MemoryStream(compressed);
         using var gz = new GZipStream(ms, CompressionMode.Decompress);
-        using var reader = new StreamReader(gz);
-        string json = reader.ReadToEnd();
-        return LoadFromJson(json);
+        using var output = new MemoryStream();
+        gz.CopyTo(output);
+        return LoadFromSafeTensors(output.ToArray());
     }
 
     /// <summary>
@@ -410,38 +495,5 @@ public class Seq2SeqDecoder
         for (int i = 1; i < v.Length; i++)
             if (v[i] > v[best]) best = i;
         return best;
-    }
-
-    // ── Weight loading helpers ────────────────────────────────────────────────
-
-    private static float[] Load1D(JsonElement weights, string name)
-    {
-        var entry = weights.GetProperty(name);
-        var data = entry.GetProperty("data");
-        int len = data.GetArrayLength();
-        float[] result = new float[len];
-        int i = 0;
-        foreach (var val in data.EnumerateArray())
-            result[i++] = val.GetSingle();
-        return result;
-    }
-
-    private static float[][] Load2D(JsonElement weights, string name)
-    {
-        var entry = weights.GetProperty(name);
-        var shape = entry.GetProperty("shape");
-        int rows = shape[0].GetInt32();
-        int cols = shape[1].GetInt32();
-        var data = entry.GetProperty("data");
-
-        float[][] result = new float[rows][];
-        int idx = 0;
-        for (int r = 0; r < rows; r++)
-        {
-            result[r] = new float[cols];
-            for (int c = 0; c < cols; c++)
-                result[r][c] = data[idx++].GetSingle();
-        }
-        return result;
     }
 }

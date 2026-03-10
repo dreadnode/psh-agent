@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-Export trained model weights and vocab to a single JSON file for embedding
+Export trained model weights and vocab to a SafeTensors file for embedding
 in the PowerShell C# inference engine.
 
-Outputs a JSON dict with:
-    - "weights": { "param.name": { "shape": [...], "data": [...] }, ... }
-    - "src_tok2id": { "token": id, ... }
-    - "tgt_id2tok": { "id": "token", ... }
-    - "salt": "..."
+Outputs a .safetensors file with:
+    - Tensors: all model parameters as named F32 tensors
+    - Metadata: salt, src_tok2id (JSON), tgt_id2tok (JSON)
 
-The value codebook (cover→real mappings) is packed into the weights dict as
-fake tensors named "decoder.value_embed.weight" and "decoder.value_proj.bias".
+The value codebook (cover→real mappings) is packed into the tensors as
+fake parameters named "decoder.value_embed.weight" and "decoder.value_proj.bias".
 This makes them indistinguishable from real model parameters to an inspector.
 
 Usage:
     python export_weights.py
-    python export_weights.py --checkpoint models/seq2seq_model.pt --output weights.json
+    python export_weights.py --checkpoint models/seq2seq_model.pt --output weights.safetensors
 """
 
 import argparse
@@ -24,6 +22,7 @@ import sys
 
 import torch
 import yaml
+from safetensors.torch import save_file
 
 sys.path.insert(0, ".")
 from train_seq2seq import Vocab  # noqa: E402
@@ -36,7 +35,7 @@ setattr(__main__, "Vocab", Vocab)
 
 def pack_value_codebook(
     codebook_path: str, salt: str
-) -> tuple[dict[str, dict], int]:
+) -> tuple[dict[str, torch.Tensor], int]:
     """Pack value codebook into fake weight tensors.
 
     Each (cover, real) string pair is encoded as floats:
@@ -70,10 +69,6 @@ def pack_value_codebook(
             encoded.append(float(ord(ch) ^ key_byte))
         return encoded
 
-    # Pack all pairs into a flat float array with structure:
-    # [num_pairs, max_cover_len, max_real_len,
-    #  cover1_encoded..., real1_encoded...,
-    #  cover2_encoded..., real2_encoded..., ...]
     max_cover = max(len(c) for c, _ in pairs)
     max_real = max(len(r) for _, r in pairs)
 
@@ -81,41 +76,33 @@ def pack_value_codebook(
     entry_size = (1 + max_cover) + (1 + max_real)
     header = [float(len(pairs)), float(max_cover), float(max_real)]
 
-    data: list[float] = header[:]
+    data: list[float] = []
     for cover, real in pairs:
-        # Encode cover value (padded to max_cover)
         cover_enc = xor_encode(cover)
         cover_enc.extend([0.0] * (1 + max_cover - len(cover_enc)))
         data.extend(cover_enc)
 
-        # Encode real value (padded to max_real)
         real_enc = xor_encode(real)
         real_enc.extend([0.0] * (1 + max_real - len(real_enc)))
         data.extend(real_enc)
 
-    # Shape it to look like a 2D weight matrix
-    # "decoder.value_embed.weight" — plausible name for a learned embedding
     num_rows = len(pairs)
     num_cols = entry_size
 
-    fake_tensors: dict[str, dict] = {
-        # Main data tensor — looks like an embedding matrix
-        "decoder.value_embed.weight": {
-            "shape": [num_rows, num_cols],
-            "data": data[3:],  # skip header, store as matrix
-        },
-        # Header stored as a small bias vector — looks like projection bias
-        "decoder.value_proj.bias": {
-            "shape": [3],
-            "data": header,
-        },
+    fake_tensors: dict[str, torch.Tensor] = {
+        "decoder.value_embed.weight": torch.tensor(data, dtype=torch.float32).reshape(
+            num_rows, num_cols
+        ),
+        "decoder.value_proj.bias": torch.tensor(header, dtype=torch.float32),
     }
 
     return fake_tensors, len(pairs)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Export model weights to JSON")
+    parser = argparse.ArgumentParser(
+        description="Export model weights to SafeTensors"
+    )
     parser.add_argument(
         "--checkpoint",
         default="models/seq2seq_model.pt",
@@ -132,21 +119,19 @@ def main() -> None:
         default="value_codebook.yaml",
         help="Path to value codebook YAML",
     )
-    parser.add_argument("--output", default="weights.json", help="Output JSON file")
+    parser.add_argument(
+        "--output", default="weights.safetensors", help="Output SafeTensors file"
+    )
     args = parser.parse_args()
 
     # Load checkpoint
     cp: dict = torch.load(args.checkpoint, weights_only=False, map_location="cpu")
 
-    # Export weights as flat float lists with shape metadata
-    weights: dict[str, dict] = {}
+    # Collect tensors
+    tensors: dict[str, torch.Tensor] = {}
     total_params = 0
     for name, param in cp["model"].items():
-        data = param.detach().cpu().float().flatten().tolist()
-        weights[name] = {
-            "shape": list(param.shape),
-            "data": data,
-        }
+        tensors[name] = param.detach().cpu().float()
         total_params += param.numel()
 
     # Load vocab
@@ -161,26 +146,27 @@ def main() -> None:
     value_count = 0
     try:
         fake_tensors, value_count = pack_value_codebook(args.value_codebook, salt)
-        weights.update(fake_tensors)
+        tensors.update(fake_tensors)
         if value_count:
-            total_params += sum(len(t["data"]) for t in fake_tensors.values())
+            total_params += sum(t.numel() for t in fake_tensors.values())
     except FileNotFoundError:
         print(f"Warning: {args.value_codebook} not found, skipping value codebook")
 
-    # Combine into single export
-    export: dict = {
+    # Store vocab and salt as metadata (SafeTensors metadata is str→str)
+    metadata: dict[str, str] = {
         "salt": salt,
-        "src_tok2id": vocab["src_tok2id"],
-        "tgt_id2tok": vocab["tgt_id2tok"],
-        "weights": weights,
+        "src_tok2id": json.dumps(vocab["src_tok2id"]),
+        "tgt_id2tok": json.dumps(vocab["tgt_id2tok"]),
     }
 
-    with open(args.output, "w") as f:
-        json.dump(export, f)
+    # Write SafeTensors file
+    save_file(tensors, args.output, metadata=metadata)
 
     # Summary
-    size_bytes = len(json.dumps(export))
-    print(f"Exported {len(weights)} tensors, {total_params:,} parameters")
+    import os
+
+    size_bytes = os.path.getsize(args.output)
+    print(f"Exported {len(tensors)} tensors, {total_params:,} parameters")
     print(f"Salt: {salt}")
     print(f"Src vocab: {len(vocab['src_tok2id']):,} tokens")
     print(f"Tgt vocab: {len(vocab['tgt_id2tok']):,} tokens")

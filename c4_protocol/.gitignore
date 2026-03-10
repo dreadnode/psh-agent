@@ -5,6 +5,7 @@ dataset.json
 salt.txt
 models/
 weights.json
+weights.safetensors
 weights_b64.txt
 operator_*.xml
 Collect-Decode.ps1

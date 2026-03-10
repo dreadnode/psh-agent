@@ -6,8 +6,10 @@ without needing to compile C#.
 """
 
 import json
+
 import numpy as np
 import onnxruntime as ort
+from safetensors import safe_open
 
 
 def sigmoid(x: np.ndarray) -> np.ndarray:
@@ -38,18 +40,26 @@ def softmax(x: np.ndarray) -> np.ndarray:
     return e / e.sum()
 
 
-def infer(token_ids: list[int], w: dict, src_tok2id: dict, tgt_id2tok: dict) -> str:
+def load_tensor(f: safe_open, name: str) -> np.ndarray:  # type: ignore[type-arg]
+    """Load a tensor and return as numpy array."""
+    return f.get_tensor(name).numpy()
+
+
+def infer(
+    token_ids: list[int],
+    tensors: dict[str, np.ndarray],
+    src_tok2id: dict[str, int],
+    tgt_id2tok: dict[str, str],
+) -> str:
     """Pure numpy inference matching the C# Seq2SeqDecoder."""
     H = 48
     SOS = 1
 
-    # Load weight matrices
     def w2d(name: str) -> np.ndarray:
-        entry = w[name]
-        return np.array(entry["data"], dtype=np.float32).reshape(entry["shape"])
+        return tensors[name]
 
     def w1d(name: str) -> np.ndarray:
-        return np.array(w[name]["data"], dtype=np.float32)
+        return tensors[name].flatten()
 
     enc_emb = w2d("encoder.embedding.weight")
     enc_wih = w2d("encoder.rnn.weight_ih_l0")
@@ -141,14 +151,16 @@ def infer(token_ids: list[int], w: dict, src_tok2id: dict, tgt_id2tok: dict) -> 
 
 
 def main() -> None:
-    # Load exported weights
-    with open("weights.json") as f:
-        export = json.load(f)
+    # Load exported weights from SafeTensors
+    tensors: dict[str, np.ndarray] = {}
+    with safe_open("weights.safetensors", framework="numpy") as f:
+        metadata = f.metadata()
+        for key in f.keys():
+            tensors[key] = f.get_tensor(key)
 
-    weights = export["weights"]
-    src_tok2id = export["src_tok2id"]
-    tgt_id2tok = export["tgt_id2tok"]
-    salt = export["salt"]
+    src_tok2id: dict[str, int] = json.loads(metadata["src_tok2id"])
+    tgt_id2tok: dict[str, str] = json.loads(metadata["tgt_id2tok"])
+    salt: str = metadata["salt"]
     unk_id = src_tok2id.get("<UNK>", 3)
 
     # Load ONNX model for comparison
@@ -183,7 +195,7 @@ def main() -> None:
         onnx_result = f"{tgt_id2tok[str(onnx_tool)]} {tgt_id2tok[str(onnx_param)]}"
 
         # Pure numpy inference (matching C# logic)
-        numpy_result = infer(ids, weights, src_tok2id, tgt_id2tok)
+        numpy_result = infer(ids, tensors, src_tok2id, tgt_id2tok)
 
         match = onnx_result == numpy_result
         status = "PASS" if match else "FAIL"

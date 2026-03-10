@@ -9,7 +9,6 @@ Verifies that:
 4. encode.py substitutes values correctly
 """
 
-import json
 import sys
 
 import yaml
@@ -201,27 +200,28 @@ def main() -> None:
     print("    Unknown values pass through unchanged")
     print("    PASS\n")
 
-    # Test 8: JSON serialization round-trip (as it would appear in weights.json)
-    print("[8] JSON serialization round-trip...")
-    fake_tensors = {
-        "decoder.value_embed.weight": {
-            "shape": [len(pairs), entry_size],
-            "data": data,
-        },
-        "decoder.value_proj.bias": {
-            "shape": [3],
-            "data": header,
-        },
-    }
-    json_str = json.dumps(fake_tensors)
-    reloaded = json.loads(json_str)
+    # Test 8: SafeTensors round-trip (as it would appear in weights.safetensors)
+    print("[8] SafeTensors round-trip...")
+    import tempfile
 
-    # Unpack from reloaded JSON
-    h2 = reloaded["decoder.value_proj.bias"]["data"]
-    d2 = reloaded["decoder.value_embed.weight"]["data"]
+    import torch
+    from safetensors import safe_open
+    from safetensors.torch import save_file
+
+    st_tensors = {
+        "decoder.value_embed.weight": torch.tensor(data, dtype=torch.float32).reshape(
+            len(pairs), entry_size
+        ),
+        "decoder.value_proj.bias": torch.tensor(header, dtype=torch.float32),
+    }
+    with tempfile.NamedTemporaryFile(suffix=".safetensors", delete=False) as tmp:
+        save_file(st_tensors, tmp.name)
+        with safe_open(tmp.name, framework="numpy") as f:
+            h2 = f.get_tensor("decoder.value_proj.bias").tolist()
+            d2 = f.get_tensor("decoder.value_embed.weight").flatten().tolist()
     recovered2 = unpack_pairs(h2, d2, salt)
-    assert recovered2 == recovered, "JSON round-trip corrupted data"
-    print(f"    JSON round-trip preserved all {len(recovered2)} entries")
+    assert recovered2 == recovered, "SafeTensors round-trip corrupted data"
+    print(f"    SafeTensors round-trip preserved all {len(recovered2)} entries")
     print("    PASS\n")
 
     print(f"=== All 8 tests passed. {len(pairs)} value codebook entries verified. ===")

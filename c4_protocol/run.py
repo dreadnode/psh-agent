@@ -97,7 +97,7 @@ STEPS: dict[str, StepDef] = {
     },
     "export": {
         "script": "export_weights.py",
-        "description": "Export model weights to JSON",
+        "description": "Export model weights to SafeTensors",
         "args": lambda _a: [
             "--checkpoint",
             str(DIR / "models" / "seq2seq_model.pt"),
@@ -108,7 +108,7 @@ STEPS: dict[str, StepDef] = {
             "--value-codebook",
             str(DIR / "value_codebook.yaml"),
             "--output",
-            str(DIR / "weights.json"),
+            str(DIR / "weights.safetensors"),
         ],
     },
 }
@@ -161,7 +161,7 @@ def run_step(name: str, step_def: StepDef, args: argparse.Namespace) -> None:
 def assemble_ps1() -> None:
     """Assemble self-contained PS1 deployment artifacts with embedded weights.
 
-    Reads ``weights.json`` (from the export step), gzip-compresses it, base64-
+    Reads ``weights.safetensors`` (from the export step), gzip-compresses it, base64-
     encodes it, and injects the blob into each PS1 template — replacing the
     ``__WEIGHTS_BASE64__`` placeholder.
 
@@ -174,7 +174,7 @@ def assemble_ps1() -> None:
     """
     console.rule("[bold cyan]assemble[/] — Assemble self-contained PS1 scripts")
 
-    weights_path = DIR / "weights.json"
+    weights_path = DIR / "weights.safetensors"
 
     if not weights_path.exists():
         console.print(f"[bold red]MISSING[/] {weights_path}")
