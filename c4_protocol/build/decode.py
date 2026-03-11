@@ -6,8 +6,8 @@ Real inputs require the salt prefix to decode correctly.
 Decoy inputs (without salt) will decode to fake tool/param names.
 
 Usage:
-    python decode.py --operator-secret "mysecret" "Portal cached_ref"
-    python decode.py --operator-secret "mysecret"   # interactive mode
+    python decode.py --public-key operator_public_key.xml "Portal cached_ref"
+    python decode.py --public-key operator_public_key.xml   # interactive mode
     python decode.py --salt-file salt.txt "Portal cached_ref"  # legacy
 """
 
@@ -59,20 +59,22 @@ def decode(model: Seq2Seq, src_vocab: Vocab, tgt_vocab: Vocab, coded_text: str) 
 
 
 def resolve_salt(args: argparse.Namespace) -> str:
-    """Resolve salt from operator secret or salt file."""
-    if args.operator_secret:
-        return derive_salt(args.operator_secret)
+    """Resolve salt from public key or salt file."""
+    if args.public_key:
+        with open(args.public_key) as f:
+            pubkey_xml = f.read()
+        return derive_salt(pubkey_xml)
     if args.salt_file:
         with open(args.salt_file) as f:
             return f.read().strip()
-    print("Error: provide --operator-secret or --salt-file", file=sys.stderr)
+    print("Error: provide --public-key or --salt-file", file=sys.stderr)
     sys.exit(1)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Decode coded text")
     parser.add_argument("coded", nargs="*", help="Coded text to decode")
-    parser.add_argument("--operator-secret", type=str, help="Operator secret")
+    parser.add_argument("--public-key", type=str, help="RSA public key XML file")
     parser.add_argument("--salt-file", type=str, default="salt.txt", help="Salt file (legacy)")
     parser.add_argument("--model", default="seq2seq_model.pt", help="Model checkpoint")
     args = parser.parse_args()

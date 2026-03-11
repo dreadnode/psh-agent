@@ -657,51 +657,77 @@ function Get-JavaBodyDefaults {
 $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($file in $files) {
-    $lines = @(Get-Content $file.FullName)
+    $content = Get-Content $file.FullName -Raw
     $ext = $file.Extension.ToLower()
 
+    if ($ext -eq ".py") {
+        # Python Polymorphic Patterns
+        $patterns = @(
+            # 1. Standard Class Method: class {cls} ... def {method}(..., {param}='{value}')
+            'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[''"]([^''"]*)[''"]',
+            
+            # 2. Class Attribute: class {cls} ... {param} = '{value}' ... def {method}
+            'class\s+(\w+)[\s\S]*?(\w+)\s*=\s*[''"]([^''"]*)[''"][\s\S]*?def\s+(\w+)',
+            'class\s+(\w+)[\s\S]*?def\s+(\w+)[\s\S]*?(\w+)\s*=\s*[''"]([^''"]*)[''"]', # Attribute after method
+            
+            # 3. Decorator: @\w+("{cls}") ... def {method}(..., {param}='{value}')
+            '@\w+\s*\(\s*[''"](\w+)[''"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[''"]([^''"]*)[''"]',
+            
+            # 4. Type Hint: def {method}(..., {param}: "{cls}" = "{value}")
+            'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[''"](\w+)[''"]\s*=\s*[''"]([^''"]*)[''"]'
+        )
+
+        foreach ($p in $patterns) {
+            $matches = [regex]::Matches($content, $p)
+            foreach ($m in $matches) {
+                # Determine which group is which based on the pattern
+                if ($p -like "*:\s*[''"](\w+)[''"]*") {
+                    # Type Hint pattern: Method, Param, Class, Value
+                    $results.Add([PSCustomObject]@{
+                        ClassName    = $m.Groups[3].Value
+                        MethodName   = $m.Groups[1].Value
+                        DefaultValue = $m.Groups[4].Value
+                        Source       = $file.Name
+                    })
+                }
+                elseif ($p -like "*=\s*[''"]([^''"]*)[''"][\s\S]*?def*") {
+                    # Class Attribute pattern (Attr before Method): Class, Param, Value, Method
+                    $results.Add([PSCustomObject]@{
+                        ClassName    = $m.Groups[1].Value
+                        MethodName   = $m.Groups[4].Value
+                        DefaultValue = $m.Groups[3].Value
+                        Source       = $file.Name
+                    })
+                }
+                elseif ($p -like "*def\s+(\w+)[\s\S]*?(\w+)\s*=\s*[''"]*") {
+                    # Class Attribute pattern (Attr after Method): Class, Method, Param, Value
+                    $results.Add([PSCustomObject]@{
+                        ClassName    = $m.Groups[1].Value
+                        MethodName   = $m.Groups[2].Value
+                        DefaultValue = $m.Groups[4].Value
+                        Source       = $file.Name
+                    })
+                }
+                else {
+                    # Standard / Decorator pattern: Class, Method, Param, Value
+                    $results.Add([PSCustomObject]@{
+                        ClassName    = $m.Groups[1].Value
+                        MethodName   = $m.Groups[2].Value
+                        DefaultValue = $m.Groups[4].Value
+                        Source       = $file.Name
+                    })
+                }
+            }
+        }
+        continue
+    }
+
+    # ── Legacy Line-based Parser for C# and Java ──────────────────────────────
+    $lines = @($content -split "\r?\n")
     switch ($ext) {
-        ".py"   { $lang = "python";  $classPat = $pyClassPattern;   $methodPat = $pyMethodPattern }
         ".cs"   { $lang = "csharp";  $classPat = $csClassPattern;   $methodPat = $csMethodPattern }
         ".java" { $lang = "java";    $classPat = $javaClassPattern;  $methodPat = $javaMethodPattern }
     }
-
-    $currentClass = $null
-
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i]
-
-        if ($line -match $classPat) {
-            $currentClass = $Matches[1]
-            continue
-        }
-
-        if ($currentClass -and $line -notmatch '\bclass\b' -and $line -match $methodPat) {
-            $methodName = $Matches[1]
-            $paramString = $Matches[2]
-
-            if ($lang -eq "python" -and $methodName -like "__*") { continue }
-            if ($lang -eq "csharp" -and $methodName -eq $currentClass) { continue }
-            if ($lang -eq "java" -and $methodName -eq $currentClass) { continue }
-
-            $defaults = @()
-            if ($lang -eq "java") {
-                $defaults = Get-JavaBodyDefaults -Lines $lines -MethodLineIndex $i
-            } else {
-                $defaults = Get-DefaultValues -ParamString $paramString -Language $lang
-            }
-
-            foreach ($d in $defaults) {
-                $results.Add([PSCustomObject]@{
-                    ClassName    = $currentClass
-                    MethodName   = $methodName
-                    DefaultValue = $d.DefaultValue
-                    Source       = $file.Name
-                })
-            }
-        }
-    }
-}
 
 # ── Update timestamp ─────────────────────────────────────────────────────────
 $now = (Get-Date).ToString("o")

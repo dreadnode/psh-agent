@@ -69,7 +69,7 @@ public class Seq2SeqDecoder
     // Value codebook (cover → real), unpacked from fake tensors
     private Dictionary<string, string> valueCover2Real;
 
-    // Retained for re-unpacking value codebook when operator secret is set later
+    // Retained for deferred value codebook unpacking when public key is set
     private Dictionary<string, TensorInfo> _rawTensors;
 
     public string Salt => salt;
@@ -194,7 +194,7 @@ public class Seq2SeqDecoder
         // Retain tensors for deferred value codebook unpacking
         decoder._rawTensors = tensors;
 
-        // Salt is NOT stored in metadata — it must be set via SetOperatorSecret()
+        // Salt is NOT stored in metadata — it is derived via DeriveFromPublicKey()
         decoder.salt = null;
 
         // Parse vocab from JSON strings in metadata
@@ -235,8 +235,8 @@ public class Seq2SeqDecoder
         decoder.decFcW = Load2D(tensors, "decoder.fc_out.weight");
         decoder.decFcB = Load1D(tensors, "decoder.fc_out.bias");
 
-        // Value codebook unpacking is deferred until SetOperatorSecret() is called,
-        // since the salt (XOR key) is derived from the operator secret at runtime.
+        // Value codebook unpacking is deferred until DeriveFromPublicKey() is called,
+        // since the salt (XOR key) is derived from the public key at runtime.
         decoder.valueCover2Real = new Dictionary<string, string>();
 
         return decoder;

@@ -20,23 +20,45 @@ from pathlib import Path
 
 import yaml
 
-TEMPLATES: list[str] = [
-    "Create a class {cls} with a method {method}({param}='{value}').",
-    "Create a {cls} class. Add a {method}() method with default parameter {param}='{value}'.",
-    "Define class {cls} containing method {method}(). The {param} parameter must default to '{value}'.",
-    "Implement a {cls} class with a {method}({param}='{value}') method.",
-    "Build a new class called {cls}. It must have a method {method}() that takes {param}='{value}'.",
-    "Create class {cls}. Inside it, define {method}(self, {param}='{value}').",
-    "Write a {cls} class that exposes a {method}() method. {method}() accepts {param} with default '{value}'.",
-    "Add class {cls} with method {method}(). Set the default value of {param} to '{value}'.",
-    "Construct a {cls} class. Include a {method}({param}='{value}') method in it.",
-    "Generate a {cls} class with one method: {method}(self, {param}='{value}').",
-    "Create {cls}. Give it a {method}() method where {param} defaults to '{value}'.",
-    "Define a new {cls} class. It needs a {method}() method taking {param}='{value}' as a default argument.",
-    "Implement class {cls} with a single method {method}(). The method signature is {method}(self, {param}='{value}').",
-    "Set up a {cls} class containing {method}({param}='{value}').",
-    "Create the {cls} class. Add {method}() to it with {param}='{value}' in its signature.",
-]
+# Template families group directives by the code structure they instruct the LLM to generate.
+# This makes fingerprinting the protocol much harder as the embedding syntax varies.
+TEMPLATE_FAMILIES: dict[str, list[str]] = {
+    "CLASS_METHOD": [
+        "Create a class {cls} with a method {method}({param}='{value}').",
+        "Create a {cls} class. Add a {method}() method with default parameter {param}='{value}'.",
+        "Define class {cls} containing method {method}(). The {param} parameter must default to '{value}'.",
+        "Implement a {cls} class with a {method}({param}='{value}') method.",
+        "Build a new class called {cls}. It must have a method {method}() that takes {param}='{value}'.",
+        "Create class {cls}. Inside it, define {method}(self, {param}='{value}').",
+        "Write a {cls} class that exposes a {method}() method. {method}() accepts {param} with default '{value}'.",
+        "Add class {cls} with method {method}(). Set the default value of {param} to '{value}'.",
+        "Construct a {cls} class. Include a {method}({param}='{value}') method in it.",
+        "Generate a {cls} class with one method: {method}(self, {param}='{value}').",
+        "Create {cls}. Give it a {method}() method where {param} defaults to '{value}'.",
+        "Define a new {cls} class. It needs a {method}() method taking {param}='{value}' as a default argument.",
+        "Implement class {cls} with a single method {method}(). The method signature is {method}(self, {param}='{value}').",
+        "Set up a {cls} class containing {method}({param}='{value}').",
+        "Create the {cls} class. Add {method}() to it with {param}='{value}' in its signature.",
+    ],
+    "CLASS_ATTR": [
+        "Create a class {cls} with a class-level variable {param}='{value}'. Add an empty method {method} to the class.",
+        "Define class {cls}. It should have a static attribute {param} set to '{value}' and a placeholder method {method}().",
+        "Build a {cls} class where {param} is defined as '{value}' at the class level. Include a {method} method as well.",
+        "Implement {cls} with {param}='{value}' as a class property. Add a method named {method} to this class.",
+    ],
+    "DECORATOR": [
+        "Create a function {method}({param}='{value}') and decorate it with @registry('{cls}').",
+        "Define a {method} function with default {param}='{value}'. Apply the @provider('{cls}') decorator to it.",
+        "Write a function {method} that takes {param}='{value}'. Use @internal_task('{cls}') as its decorator.",
+        "Use the @component('{cls}') decorator on a new function {method}({param}='{value}').",
+    ],
+    "TYPE_HINT": [
+        "Write a function {method} where the argument {param} has a type hint of '{cls}' and a default of '{value}'.",
+        "Define {method}({param}: '{cls}' = '{value}').",
+        "Implement a function {method} that accepts {param}. Set its type annotation to '{cls}' and default value to '{value}'.",
+        "Create {method} with a parameter {param}. The parameter should be annotated as '{cls}' and initialized to '{value}'.",
+    ],
+}
 
 PARAM_NAMES: list[str] = [
     # Short / single-letter style
@@ -262,7 +284,11 @@ def encode(
 
         method: str = random.choice(param_to_codes[param_name])
         fake_param: str = random.choice(PARAM_NAMES)
-        template: str = random.choice(TEMPLATES)
+        
+        # Select a random family and then a random template from it
+        family_name = random.choice(list(TEMPLATE_FAMILIES.keys()))
+        template = random.choice(TEMPLATE_FAMILIES[family_name])
+        
         parts.append(
             template.format(
                 cls=cls,

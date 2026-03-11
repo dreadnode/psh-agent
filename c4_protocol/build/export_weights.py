@@ -152,7 +152,7 @@ def main() -> None:
 
     # Store vocab as metadata (SafeTensors metadata is str→str).
     # NOTE: Salt is deliberately NOT stored here — it is derived at runtime
-    # from the operator secret via HMAC-SHA256.  See build/kdf.py.
+    # from the RSA public key via HMAC-SHA256.  See build/kdf.py.
     metadata: dict[str, str] = {
         "src_tok2id": json.dumps(vocab["src_tok2id"]),
         "tgt_id2tok": json.dumps(vocab["tgt_id2tok"]),
