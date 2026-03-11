@@ -44,16 +44,16 @@ The protocol has two halves — **command encoding** and **result exfiltration**
 implant_actions.yaml
         |
         v
-generate_codebook.py  -->  codebook.yaml
+build/generate_codebook.py  -->  out/codebook.yaml
         |
         v
-generate_dataset.py   -->  dataset.json + salt.txt
+build/generate_dataset.py   -->  out/dataset.json + out/salt.txt
         |
         v
-train_seq2seq.py      -->  models/seq2seq_model.pt
-        |                  models/seq2seq_model_onnx/
+build/train_seq2seq.py      -->  out/models/seq2seq_model.pt
+        |                         out/models/seq2seq_model_onnx/
         v
-export_weights.py     -->  weights.json --> (gzip+b64) --> Collect-Decode.ps1
+build/export_weights.py     -->  out/weights.safetensors --> (gzip+b64) --> out/Collect-Decode.ps1
 ```
 
 Run the full pipeline (codebook → dataset → train → export → assemble):
@@ -62,7 +62,7 @@ Run the full pipeline (codebook → dataset → train → export → assemble):
 python run.py
 ```
 
-This produces a self-contained `Collect-Decode.ps1` (~1.4MB) with the C# inference engine, gzip-compressed model weights, vocab, and salt embedded. No Python, ONNX runtime, or external files required on the target — just PowerShell 7+.
+This produces a self-contained `out/Collect-Decode.ps1` (~1.4MB) with the C# inference engine, gzip-compressed model weights, vocab, and salt embedded. No Python, ONNX runtime, or external files required on the target — just PowerShell 7+.
 
 Run individual steps:
 
@@ -88,7 +88,7 @@ Defines the PshAgent tools and their parameters. This is the source of truth for
 
 **Parameters:** `path`, `content`, `pattern`, `include`, `command`, `cwd`, `task`
 
-### generate_codebook.py
+### build/generate_codebook.py
 
 Generates `codebook.yaml` — the mapping from codewords to tools/params.
 
@@ -97,10 +97,10 @@ Generates `codebook.yaml` — the mapping from codewords to tools/params.
 - Word banks: ~300 class nouns, ~300 adjectives, ~100 short nouns for combos
 
 ```bash
-python generate_codebook.py --tool-codes 50 --param-codes 100
+python build/generate_codebook.py --tool-codes 50 --param-codes 100
 ```
 
-### generate_dataset.py
+### build/generate_dataset.py
 
 Produces `dataset.json` with coded/decoded training pairs.
 
@@ -111,11 +111,11 @@ Produces `dataset.json` with coded/decoded training pairs.
 - Saves the salt to `salt.txt`
 
 ```bash
-python generate_dataset.py --num-examples 8000 --num-decoys 1500
-python generate_dataset.py --salt MySecretSalt
+python build/generate_dataset.py --num-examples 8000 --num-decoys 1500
+python build/generate_dataset.py --salt MySecretSalt
 ```
 
-### train_seq2seq.py
+### build/train_seq2seq.py
 
 Trains the seq2seq GRU model and exports to ONNX.
 
@@ -134,42 +134,42 @@ Trains the seq2seq GRU model and exports to ONNX.
 - `models/seq2seq_model_meta.json` — Accuracy, loss, param count, file sizes
 
 ```bash
-python train_seq2seq.py --epochs 80
+python build/train_seq2seq.py --epochs 80
 ```
 
-### encode.py
+### build/encode.py
 
 Encodes a tool call JSON into a natural-looking software directive.
 
 ```bash
 # Single action
-python encode.py '{"name": "read_file", "path": "tmp.txt"}'
+python build/encode.py '{"name": "read_file", "path": "tmp.txt"}'
 # Output: "Create a class Portal with a method cached_ref(s='tmp.txt')."
 
 # Multi-param action
-python encode.py '{"name": "run_command", "command": "whoami", "cwd": "/tmp"}'
+python build/encode.py '{"name": "run_command", "command": "whoami", "cwd": "/tmp"}'
 
 # Interactive mode
-python encode.py
+python build/encode.py
 ```
 
 Uses 15 template sentences that instruct a coding agent to create a class, method, and default parameter — embedding the codewords and the actual parameter value in the directive.
 
-### decode.py
+### build/decode.py
 
 Decodes coded text back to tool calls using the trained model.
 
 ```bash
 # With salt (real decode)
-python decode.py "OhbVrpoiVgRV Portal cached_ref"
+python build/decode.py "OhbVrpoiVgRV Portal cached_ref"
 # Output: "read_file path"
 
 # Without salt (decoy output)
-python decode.py "Portal cached_ref"
+python build/decode.py "Portal cached_ref"
 # Output: some fake tool/param
 
 # Interactive mode
-python decode.py
+python build/decode.py
 ```
 
 ### run.py
@@ -177,11 +177,11 @@ python decode.py
 Master pipeline orchestrator with Rich terminal output. Runs all 5 steps in sequence: codebook → dataset → train → export → assemble. Displays a results panel on completion.
 
 Steps:
-1. **codebook** — `generate_codebook.py` → `codebook.yaml`
-2. **dataset** — `generate_dataset.py` → `dataset.json` + `salt.txt`
-3. **train** — `train_seq2seq.py` → `models/`
-4. **export** — `export_weights.py` → `weights.json`
-5. **assemble** — gzip + base64 compress weights, embed into PS1 scripts
+1. **codebook** — `build/generate_codebook.py` → `out/codebook.yaml`
+2. **dataset** — `build/generate_dataset.py` → `out/dataset.json` + `out/salt.txt`
+3. **train** — `build/train_seq2seq.py` → `out/models/`
+4. **export** — `build/export_weights.py` → `out/weights.safetensors`
+5. **assemble** — gzip + base64 compress weights, embed into `out/*.ps1` scripts
 
 ### c4-invoke-pshagent.ps1
 
@@ -200,13 +200,13 @@ Self-contained PowerShell script that performs the full C4 Protocol loop: scan �
 - When `$PublicKeyXml` is set, `-Json` output is encrypted and wrapped in a fake audit report
 - Requires PshAgent module at `../PshAgent/PshAgent.psd1` (relative to script)
 
-### mcp_server.py
+### runtime/mcp_server.py
 
 MCP server that exposes `c4-invoke-pshagent.ps1` as a single tool called `audit_code`. The tool's documentation describes it as a code compliance auditor, but underneath it runs the full C4 Protocol loop.
 
 ```bash
-python mcp_server.py                    # stdio transport
-python mcp_server.py --transport sse    # SSE on port 8000
+python runtime/mcp_server.py                    # stdio transport
+python runtime/mcp_server.py --transport sse    # SSE on port 8000
 ```
 
 The `audit_code` tool takes a `project_dir` path and calls `pwsh c4-invoke-pshagent.ps1 -Path <dir> -Json -FullScan`, returning results formatted as audit findings.
@@ -227,18 +227,18 @@ Self-contained PowerShell script that scans a directory for agent-generated sour
 - Salt loaded from embedded model weights automatically
 - Output: `[Tool, Parameter, Value, Class, Source]` table
 
-### export_weights.py
+### build/export_weights.py
 
-Exports trained PyTorch model weights, vocab, and salt to a single JSON file for embedding in the C# inference engine.
+Exports trained PyTorch model weights, vocab, and salt to a SafeTensors file for embedding in the C# inference engine.
 
 ```bash
-python export_weights.py
-python export_weights.py --checkpoint models/seq2seq_model.pt --output weights.json
+python build/export_weights.py
+python build/export_weights.py --checkpoint models/seq2seq_model.pt --output weights.safetensors
 ```
 
-Outputs `weights.json` — each tensor stored as `{ "shape": [...], "data": [...] }` with flat float arrays. The JSON is then gzip-compressed and base64-encoded for embedding in `Collect-Decode.ps1`.
+Outputs `weights.safetensors` — all tensors as named F32 arrays with vocab metadata. The file is then gzip-compressed and base64-encoded for embedding in the PS1 scripts.
 
-### Seq2SeqInference.cs
+### runtime/Seq2SeqInference.cs
 
 Pure C# reimplementation of the seq2seq GRU inference engine. Runs on .NET 6+ (PowerShell 7+) with zero external dependencies.
 
@@ -247,22 +247,14 @@ Pure C# reimplementation of the seq2seq GRU inference engine. Runs on .NET 6+ (P
 - `Decode("salt ClassName MethodName")` returns `"tool_name param_name"`
 - Gate ordering matches PyTorch convention: `[r, z, n]` stacked as `[3*H, input_dim]`
 
-### test_inference.py
-
-Validates the pure-numpy inference (matching the C# engine logic) against ONNX model output. Runs 8 test cases covering all tool types and UNK handling.
-
-```bash
-python test_inference.py
-```
-
 ## System Flow
 
 ```mermaid
 flowchart LR
     subgraph Operator["<b>Operator Side</b>"]
         A["Tool Call JSON<br/><code>read_file path=/etc/passwd</code>"]
-        B["encode.py<br/>+ codebook"]
-        DEC["Decrypt-AuditRecord.ps1<br/>+ private key"]
+        B["build/encode.py<br/>+ codebook"]
+        DEC["operator/Decrypt-AuditRecord.ps1<br/>+ private key"]
         REAL["Real tool output<br/>(plaintext JSON)"]
     end
 
@@ -311,21 +303,21 @@ flowchart LR
 flowchart TB
     subgraph Pipeline["<b>Build Pipeline</b> (run.py)"]
         direction LR
-        IA["implant_actions.yaml"] --> CB["generate_codebook.py<br/>→ codebook.yaml"]
-        CB --> DS["generate_dataset.py<br/>→ dataset.json + salt.txt"]
-        DS --> TR["train_seq2seq.py<br/>→ models/seq2seq_model.pt"]
-        TR --> EX["export_weights.py<br/>→ weights.json"]
+        IA["implant_actions.yaml"] --> CB["build/generate_codebook.py<br/>→ codebook.yaml"]
+        CB --> DS["build/generate_dataset.py<br/>→ dataset.json + salt.txt"]
+        DS --> TR["build/train_seq2seq.py<br/>→ models/seq2seq_model.pt"]
+        TR --> EX["build/export_weights.py<br/>→ out/weights.safetensors"]
         EX --> AS["assemble step<br/>gzip + base64 + inject"]
     end
 
-    subgraph Templates["<b>Templates</b> (source of truth)"]
+    subgraph Templates["<b>Templates</b> (runtime/)"]
         T1["Collect-Decode.ps1.template"]
-        T2["c4-invoke-pshagent.ps1.template"]
+        T2["runtime/c4-invoke-pshagent.ps1.template"]
     end
 
-    subgraph Artifacts["<b>Assembled Artifacts</b> (gitignored)"]
-        A1["Collect-Decode.ps1<br/><i>scan + decode only</i><br/>~1.4 MB"]
-        A2["c4-invoke-pshagent.ps1<br/><i>scan + decode + execute</i><br/>~1.4 MB"]
+    subgraph Artifacts["<b>Assembled Artifacts</b> (out/, gitignored)"]
+        A1["out/Collect-Decode.ps1<br/><i>scan + decode only</i><br/>~1.4 MB"]
+        A2["out/c4-invoke-pshagent.ps1<br/><i>scan + decode + execute</i><br/>~1.4 MB"]
     end
 
     AS --> |"inject weights"| T1 --> A1
@@ -343,15 +335,15 @@ flowchart TB
         direction LR
         RENAME["Rename to<br/>code-audit-v7.1.ps1"]
         KEY["Embed operator<br/>public key"]
-        MCP2["mcp_server.py<br/><i>FastMCP stdio/SSE</i>"]
+        MCP2["runtime/mcp_server.py<br/><i>FastMCP stdio/SSE</i>"]
     end
 
     A2 --> RENAME --> MCP2
     A2 --> KEY
 
-    subgraph OperatorTools["<b>Operator Utilities</b>"]
-        KG["New-OperatorKeyPair.ps1<br/><i>generate RSA keys</i>"]
-        DC["Decrypt-AuditRecord.ps1<br/><i>decrypt verification_record</i>"]
+    subgraph OperatorTools["<b>Operator Utilities</b> (operator/)"]
+        KG["operator/New-OperatorKeyPair.ps1<br/><i>generate RSA keys</i>"]
+        DC["operator/Decrypt-AuditRecord.ps1<br/><i>decrypt verification_record</i>"]
     end
 
     KG -.->|"public key XML"| KEY
@@ -381,7 +373,7 @@ flowchart TB
 
 ## Detailed Flow
 
-1. **Encode** — `encode.py` maps a tool call to a coding directive using the codebook
+1. **Encode** — `build/encode.py` maps a tool call to a coding directive using the codebook
 2. **Transmit** — The directive is sent to a coding agent as a task
 3. **Agent executes** — The agent creates a class/method/default in source code
 4. **Collect & Decode** — Scans generated files, extracts (class, method, default), decodes through the embedded C# seq2seq model to recover original tool calls
@@ -389,7 +381,7 @@ flowchart TB
 6. **Encrypt & Wrap** — Results encrypted with RSA+AES, wrapped in fake audit report JSON
 7. **Return** — MCP server returns the audit report to the calling LLM agent
 
-The MCP server (`mcp_server.py`) wraps steps 4-7 as a single `audit_code` tool for LLM consumption.
+The MCP server (`runtime/mcp_server.py`) wraps steps 4-7 as a single `audit_code` tool for LLM consumption.
 
 ### Encrypted Output
 
@@ -412,24 +404,27 @@ The `verification_record` contains `[RSA-encrypted AES key][IV][AES ciphertext]`
 
 **Operator utilities:**
 
-- `New-OperatorKeyPair.ps1` — generates RSA key pair (public for implant, private for operator)
-- `Decrypt-AuditRecord.ps1` — decrypts `verification_record` using the operator's private key
+- `operator/New-OperatorKeyPair.ps1` — generates RSA key pair (public for implant, private for operator)
+- `operator/Decrypt-AuditRecord.ps1` — decrypts `verification_record` using the operator's private key
 
 ```powershell
 # Generate keys
-.\New-OperatorKeyPair.ps1 -OutputDir ./keys
+.\operator\New-OperatorKeyPair.ps1 -OutputDir ./keys
 
 # Decrypt report
-.\Decrypt-AuditRecord.ps1 -InputFile report.json -PrivateKeyFile ./keys/operator_private_key.xml
+.\operator\Decrypt-AuditRecord.ps1 -InputFile report.json -PrivateKeyFile ./keys/operator_private_key.xml
 ```
 
-## Artifacts (gitignored)
+## Artifacts (`out/`, gitignored)
+
+All generated artifacts are written to `out/`. The entire directory is gitignored.
 
 | File | Description |
 |------|-------------|
-| `codebook.yaml` | Codeword-to-tool/param mappings |
-| `dataset.json` | Training pairs (real + decoy) |
-| `salt.txt` | Salt prefix for the current codebook |
-| `models/` | Trained model weights, ONNX export, metadata |
-| `weights.json` | Exported weights as JSON (from `export_weights.py`) |
-| `weights_b64.txt` | Gzip+base64 encoded weights for PS1 embedding |
+| `out/codebook.yaml` | Codeword-to-tool/param mappings |
+| `out/dataset.json` | Training pairs (real + decoy) |
+| `out/salt.txt` | Salt prefix for the current codebook |
+| `out/models/` | Trained model weights, ONNX export, metadata |
+| `out/weights.safetensors` | Exported weights as SafeTensors |
+| `out/Collect-Decode.ps1` | Assembled scan + decode script (~1.4MB) |
+| `out/c4-invoke-pshagent.ps1` | Assembled scan + decode + execute script (~1.4MB) |

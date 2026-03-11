@@ -1,12 +1,4 @@
 __pycache__/
 *.pyc
-codebook.yaml
-dataset.json
-salt.txt
-models/
-weights.json
-weights.safetensors
-weights_b64.txt
+out/
 operator_*.xml
-Collect-Decode.ps1
-c4-invoke-pshagent.ps1

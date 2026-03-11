@@ -69,8 +69,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 public class Seq2SeqDecoder
 {
@@ -112,8 +114,27 @@ public class Seq2SeqDecoder
     private int unkId = 3;
     private int sosId = 1;
     private Dictionary<string, string> valueCover2Real;
+    private Dictionary<string, TensorInfo> _rawTensors;
 
     public string Salt => salt;
+
+    public static string DeriveSalt(string publicKeyXml, int length = 12)
+    {
+        string normalized = Regex.Replace(publicKeyXml, @"\s", "");
+        byte[] key = Encoding.UTF8.GetBytes(normalized);
+        byte[] msg = Encoding.UTF8.GetBytes("c4-salt");
+        using var hmac = new HMACSHA256(key);
+        byte[] hash = hmac.ComputeHash(msg);
+        string hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        return hex.Substring(0, length);
+    }
+
+    public void DeriveFromPublicKey(string publicKeyXml)
+    {
+        salt = DeriveSalt(publicKeyXml);
+        if (_rawTensors != null)
+            valueCover2Real = LoadValueCodebook(_rawTensors, salt);
+    }
 
     private struct TensorInfo
     {
@@ -192,7 +213,8 @@ public class Seq2SeqDecoder
         var (tensors, metadata) = ParseSafeTensors(data);
         var decoder = new Seq2SeqDecoder();
 
-        decoder.salt = metadata["salt"];
+        decoder._rawTensors = tensors;
+        decoder.salt = null;
 
         decoder.srcTok2Id = new Dictionary<string, int>();
         using (var srcDoc = JsonDocument.Parse(metadata["src_tok2id"]))
@@ -230,7 +252,7 @@ public class Seq2SeqDecoder
         decoder.decFcW = Load2D(tensors, "decoder.fc_out.weight");
         decoder.decFcB = Load1D(tensors, "decoder.fc_out.bias");
 
-        decoder.valueCover2Real = LoadValueCodebook(tensors, decoder.salt);
+        decoder.valueCover2Real = new Dictionary<string, string>();
 
         return decoder;
     }
@@ -516,16 +538,20 @@ $WeightsBase64 = @'
 __WEIGHTS_BASE64__
 '@
 
+# ── Operator Public Key (RSA XML) ─────────────────────────────────────────
+# Replace this placeholder with the operator's RSA public key XML at deployment.
+# The public key serves two purposes:
+#   1. Encrypt results (RSA+AES hybrid encryption)
+#   2. Derive the model activation salt (HMAC-SHA256 of the key)
+# When empty, output is returned unencrypted and salt derivation will fail.
+$PublicKeyXml = ''
+
 # ── Load Model ──────────────────────────────────────────────────────────────
 Write-Host "Loading model weights..." -ForegroundColor DarkGray
 $decoder = [Seq2SeqDecoder]::LoadFromBase64Gzip($WeightsBase64)
+$decoder.DeriveFromPublicKey($PublicKeyXml)
 $Salt = $decoder.Salt
-Write-Host "Model loaded. Salt: $Salt" -ForegroundColor DarkGray
-
-# ── Operator Public Key (RSA XML) ─────────────────────────────────────────
-# Replace this placeholder with the operator's RSA public key XML at deployment.
-# When empty, output is returned unencrypted (useful for testing/dry-run).
-$PublicKeyXml = ''
+Write-Host "Model loaded." -ForegroundColor DarkGray
 
 # ── Resolve paths ────────────────────────────────────────────────────────────
 $Path = (Resolve-Path $Path).Path

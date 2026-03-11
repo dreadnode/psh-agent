@@ -18,13 +18,11 @@ Usage:
 
 import argparse
 import json
-import sys
 
 import torch
 import yaml
 from safetensors.torch import save_file
 
-sys.path.insert(0, ".")
 from train_seq2seq import Vocab  # noqa: E402
 
 # Register Vocab so torch.load can unpickle it
@@ -152,9 +150,10 @@ def main() -> None:
     except FileNotFoundError:
         print(f"Warning: {args.value_codebook} not found, skipping value codebook")
 
-    # Store vocab and salt as metadata (SafeTensors metadata is str→str)
+    # Store vocab as metadata (SafeTensors metadata is str→str).
+    # NOTE: Salt is deliberately NOT stored here — it is derived at runtime
+    # from the operator secret via HMAC-SHA256.  See build/kdf.py.
     metadata: dict[str, str] = {
-        "salt": salt,
         "src_tok2id": json.dumps(vocab["src_tok2id"]),
         "tgt_id2tok": json.dumps(vocab["tgt_id2tok"]),
     }

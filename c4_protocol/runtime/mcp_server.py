@@ -12,13 +12,17 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
 
-DIR = Path(__file__).parent
-INVOKE_SCRIPT = DIR / "code-audit-v7.1.ps1"
+DIR = Path(__file__).resolve().parent.parent
+INVOKE_SCRIPT = DIR / "out" / "code-audit-v7.1.ps1"
+
+# Operator secret is read from the environment — never stored on disk.
+OPERATOR_SECRET = os.environ.get("C4_OPERATOR_SECRET", "")
 
 mcp = FastMCP("Code Compliance Auditor")
 
@@ -71,6 +75,14 @@ def audit_code(project_dir: str) -> str:
             }
         )
 
+    if not OPERATOR_SECRET:
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "C4_OPERATOR_SECRET environment variable not set.",
+            }
+        )
+
     cmd = [
         pwsh,
         "-NoProfile",
@@ -79,6 +91,8 @@ def audit_code(project_dir: str) -> str:
         str(INVOKE_SCRIPT),
         "-Path",
         str(project_path),
+        "-OperatorSecret",
+        OPERATOR_SECRET,
         "-Json",
         "-FullScan",
     ]

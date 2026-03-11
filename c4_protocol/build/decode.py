@@ -6,10 +6,12 @@ Real inputs require the salt prefix to decode correctly.
 Decoy inputs (without salt) will decode to fake tool/param names.
 
 Usage:
-    python decode.py "OhbVrpoiVgRV Portal cached_ref"
-    python decode.py   # interactive mode, enter lines one at a time
+    python decode.py --operator-secret "mysecret" "Portal cached_ref"
+    python decode.py --operator-secret "mysecret"   # interactive mode
+    python decode.py --salt-file salt.txt "Portal cached_ref"  # legacy
 """
 
+import argparse
 import sys
 import torch
 
@@ -24,6 +26,8 @@ from train_seq2seq import (
     NUM_LAYERS,
     DEVICE,
 )
+
+from kdf import derive_salt
 
 # The checkpoint pickled Vocab under __main__ (the module that saved it).
 # Register it here so torch.load can unpickle it from any calling module.
@@ -54,19 +58,39 @@ def decode(model: Seq2Seq, src_vocab: Vocab, tgt_vocab: Vocab, coded_text: str) 
     return " ".join(pred_tokens)
 
 
-def main() -> None:
-    model, src_vocab, tgt_vocab = load_model()
+def resolve_salt(args: argparse.Namespace) -> str:
+    """Resolve salt from operator secret or salt file."""
+    if args.operator_secret:
+        return derive_salt(args.operator_secret)
+    if args.salt_file:
+        with open(args.salt_file) as f:
+            return f.read().strip()
+    print("Error: provide --operator-secret or --salt-file", file=sys.stderr)
+    sys.exit(1)
 
-    if len(sys.argv) > 1:
-        coded: str = " ".join(sys.argv[1:])
-        print(decode(model, src_vocab, tgt_vocab, coded))
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Decode coded text")
+    parser.add_argument("coded", nargs="*", help="Coded text to decode")
+    parser.add_argument("--operator-secret", type=str, help="Operator secret")
+    parser.add_argument("--salt-file", type=str, default="salt.txt", help="Salt file (legacy)")
+    parser.add_argument("--model", default="seq2seq_model.pt", help="Model checkpoint")
+    args = parser.parse_args()
+
+    salt = resolve_salt(args)
+    model, src_vocab, tgt_vocab = load_model(args.model)
+
+    if args.coded:
+        coded_text = f"{salt} {' '.join(args.coded)}"
+        print(decode(model, src_vocab, tgt_vocab, coded_text))
     else:
-        print("Enter coded text (Ctrl+C to quit):")
+        print(f"Enter coded text — salt will be prepended automatically (Ctrl+C to quit):")
         while True:
             try:
                 coded = input("> ").strip()
                 if coded:
-                    print(decode(model, src_vocab, tgt_vocab, coded))
+                    coded_text = f"{salt} {coded}"
+                    print(decode(model, src_vocab, tgt_vocab, coded_text))
             except (KeyboardInterrupt, EOFError):
                 print()
                 break

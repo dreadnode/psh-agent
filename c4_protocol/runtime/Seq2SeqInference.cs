@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 /// <summary>
 /// Pure C# inference engine for the C4 Protocol seq2seq GRU model.
@@ -67,7 +69,39 @@ public class Seq2SeqDecoder
     // Value codebook (cover → real), unpacked from fake tensors
     private Dictionary<string, string> valueCover2Real;
 
+    // Retained for re-unpacking value codebook when operator secret is set later
+    private Dictionary<string, TensorInfo> _rawTensors;
+
     public string Salt => salt;
+
+    /// <summary>
+    /// Derive salt from an RSA public key XML string using HMAC-SHA256.
+    /// Must match build/kdf.py: derive_salt(public_key_xml).
+    /// Normalizes by stripping all whitespace before hashing.
+    /// </summary>
+    public static string DeriveSalt(string publicKeyXml, int length = 12)
+    {
+        string normalized = Regex.Replace(publicKeyXml, @"\s", "");
+        byte[] key = Encoding.UTF8.GetBytes(normalized);
+        byte[] msg = Encoding.UTF8.GetBytes("c4-salt");
+        using var hmac = new HMACSHA256(key);
+        byte[] hash = hmac.ComputeHash(msg);
+        string hex = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        return hex.Substring(0, length);
+    }
+
+    /// <summary>
+    /// Set the salt by deriving it from the operator's RSA public key XML.
+    /// Must be called after loading weights (before Decode).
+    /// Also unpacks the value codebook with the derived salt.
+    /// </summary>
+    public void DeriveFromPublicKey(string publicKeyXml)
+    {
+        salt = DeriveSalt(publicKeyXml);
+        // Unpack value codebook with the derived salt
+        if (_rawTensors != null)
+            valueCover2Real = LoadValueCodebook(_rawTensors, salt);
+    }
 
     // ── SafeTensors tensor descriptor ─────────────────────────────────────────
 
@@ -157,8 +191,11 @@ public class Seq2SeqDecoder
         var (tensors, metadata) = ParseSafeTensors(data);
         var decoder = new Seq2SeqDecoder();
 
-        // Load metadata
-        decoder.salt = metadata["salt"];
+        // Retain tensors for deferred value codebook unpacking
+        decoder._rawTensors = tensors;
+
+        // Salt is NOT stored in metadata — it must be set via SetOperatorSecret()
+        decoder.salt = null;
 
         // Parse vocab from JSON strings in metadata
         decoder.srcTok2Id = new Dictionary<string, int>();
@@ -198,8 +235,9 @@ public class Seq2SeqDecoder
         decoder.decFcW = Load2D(tensors, "decoder.fc_out.weight");
         decoder.decFcB = Load1D(tensors, "decoder.fc_out.bias");
 
-        // Load value codebook from fake tensors (if present)
-        decoder.valueCover2Real = LoadValueCodebook(tensors, decoder.salt);
+        // Value codebook unpacking is deferred until SetOperatorSecret() is called,
+        // since the salt (XOR key) is derived from the operator secret at runtime.
+        decoder.valueCover2Real = new Dictionary<string, string>();
 
         return decoder;
     }

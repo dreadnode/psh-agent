@@ -23,6 +23,8 @@ from collections import Counter
 
 import yaml
 
+from kdf import derive_salt
+
 # ── Decoy word banks ────────────────────────────────────────────────────────
 # Plausible-looking "tool names" for decoys (snake_case like real tools)
 DECOY_TOOLS: list[str] = [
@@ -482,7 +484,10 @@ def main() -> None:
         "--num-decoys", type=int, default=1500, help="Number of decoy examples"
     )
     parser.add_argument(
-        "--salt", type=str, default=None, help="Salt prefix (auto-generated if omitted)"
+        "--public-key",
+        type=str,
+        default=None,
+        help="Path to RSA public key XML to derive salt from (random salt if omitted)",
     )
     parser.add_argument(
         "--salt-file", type=str, default="salt.txt", help="File to save salt to"
@@ -493,7 +498,12 @@ def main() -> None:
     random.seed(args.seed)
 
     # ── Salt ─────────────────────────────────────────────────────────────
-    salt: str = args.salt if args.salt else generate_salt()
+    if args.public_key:
+        with open(args.public_key) as f:
+            pubkey_xml: str = f.read()
+        salt: str = derive_salt(pubkey_xml)
+    else:
+        salt = generate_salt()
 
     salt_path: str = args.salt_file
     with open(salt_path, "w") as f:
