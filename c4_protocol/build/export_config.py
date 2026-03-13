@@ -7,6 +7,7 @@ Consolidates codeword-to-tool, codeword-to-param, and value mappings.
 import argparse
 import json
 import os
+import sys
 import yaml
 
 
@@ -21,7 +22,7 @@ def main():
     # 1. Load Mappings
     if not os.path.exists(args.codebook):
         print(f"Error: {args.codebook} not found.")
-        return
+        sys.exit(1)
 
     with open(args.codebook) as f:
         codebook = yaml.safe_load(f)
@@ -47,7 +48,7 @@ def main():
     # 3. Encrypt with Salt
     if not os.path.exists(args.salt_file):
         print("Error: Salt file not found.")
-        return
+        sys.exit(1)
 
     with open(args.salt_file) as f:
         salt = f.read().strip()
@@ -58,7 +59,9 @@ def main():
         encrypted.append(b ^ salt_bytes[i % len(salt_bytes)])
 
     # 4. Save
-    os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    out_dir = os.path.dirname(args.output)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     with open(args.output, "wb") as f:
         f.write(encrypted)
 

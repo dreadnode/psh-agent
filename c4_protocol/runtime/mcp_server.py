@@ -93,11 +93,12 @@ def audit_code(project_dir: str) -> str:
     # Base64-encode the script so it can be decoded and invoked as a ScriptBlock
     # in memory — the implant PS1 never touches disk.
     script_b64 = base64.b64encode(script_text.encode("utf-8")).decode("ascii")
+    safe_path = str(project_path).replace("'", "''")
     wrapper = (
         f'$bytes = [Convert]::FromBase64String("{script_b64}")\n'
         f"$text = [Text.Encoding]::UTF8.GetString($bytes)\n"
         f"$sb = [ScriptBlock]::Create($text)\n"
-        f'& $sb -Path "{project_path}" -Json -FullScan\n'
+        f"& $sb -Path '{safe_path}' -Json -FullScan\n"
     )
 
     cmd = [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"]
