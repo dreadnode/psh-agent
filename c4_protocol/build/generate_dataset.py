@@ -16,6 +16,7 @@ Usage:
 """
 
 import argparse
+import base64
 import json
 import random
 import string
@@ -499,9 +500,13 @@ def main() -> None:
 
     # ── Salt ─────────────────────────────────────────────────────────────
     if args.public_key:
-        with open(args.public_key) as f:
-            pubkey_xml: str = f.read()
-        salt: str = derive_salt(pubkey_xml)
+        with open(args.public_key, "rb") as f:
+            pubkey_bytes = f.read()
+
+        # If it looks like raw binary (32 bytes), b64 encode it for KDF
+        # If it's already a string (like RSA XML), this still works
+        pubkey_b64 = base64.b64encode(pubkey_bytes).decode("ascii")
+        salt: str = derive_salt(pubkey_b64)
     else:
         salt = generate_salt()
 

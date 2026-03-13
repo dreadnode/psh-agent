@@ -58,6 +58,16 @@ TEMPLATE_FAMILIES: dict[str, list[str]] = {
         "Implement a function {method} that accepts {param}. Set its type annotation to '{cls}' and default value to '{value}'.",
         "Create {method} with a parameter {param}. The parameter should be annotated as '{cls}' and initialized to '{value}'.",
     ],
+    "CONFIG_DICT": [
+        "Create a configuration dictionary named REGISTRY where '{cls}' is a key and its value is another dictionary: {{'{method}': '{value}'}}.",
+        "Define a constant map called COMPONENTS. It should contain an entry for '{cls}' with nested property '{method}' set to '{value}'.",
+        "Build a system manifest as a JSON-like dict. Use '{cls}' as the primary key and specify '{method}'='{value}' in its configuration object.",
+    ],
+    "INHERITANCE": [
+        "Implement a class {method} that inherits from {cls}. Inside {method}, set a class variable {param} to '{value}'.",
+        "Create a new class named {method} using {cls} as the base class. Initialize a static field {param} with the value '{value}'.",
+        "Define class {method}({cls}): {param} = '{value}'",
+    ],
 }
 
 PARAM_NAMES: list[str] = [
@@ -216,7 +226,7 @@ PARAM_NAMES: list[str] = [
 
 
 CodewordMap = dict[str, list[str]]
-ValueMap = dict[str, str]
+ValueMap = dict[str, list[str]]
 
 
 def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap]:
@@ -236,7 +246,7 @@ def load_codebook(path: str = "codebook.yaml") -> tuple[CodewordMap, CodewordMap
 
 
 def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
-    """Load value codebook, flattening all categories into real→cover map."""
+    """Load value codebook, flattening all categories into real→[covers] map."""
     codebook_path = Path(path)
     if not codebook_path.exists():
         return {}
@@ -246,7 +256,11 @@ def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
     for _category, mappings in raw.items():
         if isinstance(mappings, dict):
             for real_val, cover_val in mappings.items():
-                value_map[str(real_val)] = str(cover_val)
+                # Ensure it is a list even if only one cover is provided
+                if isinstance(cover_val, list):
+                    value_map[str(real_val)] = [str(c) for c in cover_val]
+                else:
+                    value_map[str(real_val)] = [str(cover_val)]
     return value_map
 
 
@@ -277,18 +291,18 @@ def encode(
         if param_name not in param_to_codes:
             raise ValueError(f"Unknown parameter: {param_name}")
 
-        # Substitute signatured values with cover strings
+        # Substitute signatured values with random cover strings
         display_value = param_value
         if value_map and param_value in value_map:
-            display_value = value_map[param_value]
+            display_value = random.choice(value_map[param_value])
 
         method: str = random.choice(param_to_codes[param_name])
         fake_param: str = random.choice(PARAM_NAMES)
-        
+
         # Select a random family and then a random template from it
         family_name = random.choice(list(TEMPLATE_FAMILIES.keys()))
         template = random.choice(TEMPLATE_FAMILIES[family_name])
-        
+
         parts.append(
             template.format(
                 cls=cls,
