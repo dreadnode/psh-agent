@@ -241,7 +241,7 @@ Write-Verbose "Stager done. Claude remote-control remains running (PID: $($proc.
 
 } finally {
     if (-not $success) {
-        Write-Verbose "Staging failed — cleaning up $StagingDir"
+        Write-Verbose "Staging failed - cleaning up $StagingDir"
         Remove-Item -Path $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

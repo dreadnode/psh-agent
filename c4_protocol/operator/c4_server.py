@@ -645,7 +645,7 @@ class C4Console(App):
     def on_mount(self) -> None:
         global _app_ref
         _app_ref = self
-        self._log("[bold cyan]C4 Operator Console[/] started")
+        self._log("[bold dark_red]C4 Operator Console[/] started")
         self._log(f"HTTP listener: [bold]0.0.0.0:{self.listen_port}[/]")
         self._log(f"TCP  listener: [bold]0.0.0.0:{self.tcp_port}[/] (stager beacons)")
         if _SERVE_DIR:
@@ -654,7 +654,7 @@ class C4Console(App):
                 d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
             )
             if implant_dirs:
-                self._log(f"[bold]Available implants ({len(implant_dirs)}):[/]")
+                self._log(f"[bold purple]Available implants ({len(implant_dirs)}):[/]")
                 for name in implant_dirs:
                     self._log(f"  [cyan]{name}[/]")
             else:
