@@ -367,7 +367,7 @@ async def handle_serve(request: web.Request) -> web.Response:
         return web.Response(text="Not found", status=404)
 
     log.info("Serving file: %s → %s", request.remote, filepath)
-    return web.FileResponse(safe_path)
+    return web.FileResponse(safe_path)  # type: ignore[return-value]
 
 
 async def handle_serve_index(request: web.Request) -> web.Response:

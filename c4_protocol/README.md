@@ -84,7 +84,7 @@ This writes the private key to `operator/operator_key.bin` and prints the public
 ### 2. Build an implant instance
 
 ```bash
-python run.py --public-key operator/operator_key.bin
+python build_implant.py --public-key operator/operator_key.bin
 ```
 
 This runs the full pipeline (codebook → dataset → config → assemble → stager) and produces a unique instance under `implants/<implant-id>/`. Each instance gets its own randomized codebook, salt, encrypted vault, and stager.
@@ -92,7 +92,7 @@ This runs the full pipeline (codebook → dataset → config → assemble → st
 Optional flags:
 
 ```bash
-python run.py --public-key operator/operator_key.bin \
+python build_implant.py --public-key operator/operator_key.bin \
   --tool-codes 50          # codewords per tool (default: 50)
   --param-codes 100        # codewords per parameter (default: 100)
   --seed 42                # fixed seed for reproducible builds

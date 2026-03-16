@@ -249,7 +249,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Generate implant ID: adjective-noun prefix + shortened UUID
-    from coolname import generate_slug
+    from coolname import generate_slug  # pyright: ignore[reportPrivateImportUsage]
 
     full_uuid = uuid.uuid4()
     short_hex = full_uuid.hex[:12]  # 48-bit suffix
