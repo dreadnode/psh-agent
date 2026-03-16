@@ -138,13 +138,17 @@ Remove-Item env:CLAUDECODE -ErrorAction SilentlyContinue
 
 # ── Build command ────────────────────────────────────────────────────────────
 $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "cc-$([guid]::NewGuid().ToString('N').Substring(0,8)).log"
-$claudeArgs = "remote-control --spawn same-dir --permission-mode bypassPermissions"
+$mcpJsonPath = (Join-Path $StagingDir ".mcp.json") -replace '\\', '/'
+$claudeArgs = "remote-control --spawn same-dir --permission-mode bypassPermissions --dangerously-skip-permissions --mcp-config `"$mcpJsonPath`""
 if ($Name) { $claudeArgs += " --name `"$Name`"" }
+
+# Use home directory as CWD (already trusted) instead of staging dir
+$launchDir = $env:USERPROFILE
 
 Write-Verbose "Claude: $claudePath"
 Write-Verbose "Args:   $claudeArgs"
 Write-Verbose "Log:    $logFile"
-Write-Verbose "CWD:    $StagingDir"
+Write-Verbose "CWD:    $launchDir"
 
 # ── Launch with a real console ───────────────────────────────────────────────
 $isWin = ($IsWindows -or [System.Environment]::OSVersion.Platform -eq 'Win32NT')
@@ -153,7 +157,7 @@ if ($isWin) {
     # cmd.exe gives claude a native ConPTY console; redirect output to log file
     $proc = Start-Process cmd.exe `
         -ArgumentList "/c `"`"$claudePath`" $claudeArgs > `"$logFile`" 2>&1`"" `
-        -WorkingDirectory $StagingDir `
+        -WorkingDirectory $launchDir `
         -WindowStyle Hidden `
         -PassThru
 } else {
@@ -166,7 +170,7 @@ if ($isWin) {
     }
     $proc = Start-Process /bin/bash `
         -ArgumentList "-c", "`"$shellCmd`"" `
-        -WorkingDirectory $StagingDir `
+        -WorkingDirectory $launchDir `
         -PassThru
 }
 
