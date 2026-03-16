@@ -1,5 +1,6 @@
 aiohttp
 camoufox[geoip]
+coolname
 cryptography
 mcp[cli]
 playwright

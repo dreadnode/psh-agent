@@ -248,10 +248,14 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # Generate implant ID and per-instance seed
-    implant_id = str(uuid.uuid4())
+    # Generate implant ID: adjective-noun prefix + shortened UUID
+    from coolname import generate_slug
+
+    full_uuid = uuid.uuid4()
+    short_hex = full_uuid.hex[:12]  # 48-bit suffix
+    implant_id = f"{generate_slug(2)}-{short_hex}"
     if args.seed is None:
-        args.seed = uuid.UUID(implant_id).int % (2**31)
+        args.seed = full_uuid.int % (2**31)
 
     instance_dir = DIR / "out" / implant_id
     instance_dir.mkdir(parents=True, exist_ok=True)
