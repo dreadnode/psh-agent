@@ -130,7 +130,7 @@ _TOOL_PARAMS: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 _C4_DIR = Path(__file__).resolve().parent.parent
-_OUT_DIR = _C4_DIR / "out"
+_OUT_DIR = _C4_DIR / "implants"
 _VALUE_CODEBOOK = _C4_DIR / "value_codebook.yaml"
 
 
@@ -349,7 +349,7 @@ _app_ref: C4Console | None = None
 # File serving (stager delivery)
 # ---------------------------------------------------------------------------
 
-_SERVE_DIR: Path | None = None  # set via --serve-dir (points at out/)
+_SERVE_DIR: Path | None = None  # set via --serve-dir (points at implants/)
 
 
 async def handle_serve(request: web.Request) -> web.Response:
@@ -649,7 +649,16 @@ class C4Console(App):
         self._log(f"HTTP listener: [bold]0.0.0.0:{self.listen_port}[/]")
         self._log(f"TCP  listener: [bold]0.0.0.0:{self.tcp_port}[/] (stager beacons)")
         if _SERVE_DIR:
-            self._log(f"File serving:  [bold]GET /serve/<file>[/] from {_SERVE_DIR}")
+            self._log(f"File serving:  [bold]GET /serve/<id>/<file>[/] from {_SERVE_DIR}")
+            implant_dirs = sorted(
+                d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
+            )
+            if implant_dirs:
+                self._log(f"[bold]Available implants ({len(implant_dirs)}):[/]")
+                for name in implant_dirs:
+                    self._log(f"  [cyan]{name}[/]")
+            else:
+                self._log("[dim]No implant instances found in serve directory.[/]")
         self._log("Waiting for beacons...\n")
         self._log(
             "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]\n"
@@ -866,7 +875,7 @@ class C4Console(App):
                 self._log(
                     f"  [yellow]WARNING: codebook not found for implant {beacon.implant_id[:12]}[/]"
                 )
-                self._log(f"  [dim]expected: out/{beacon.implant_id}/codebook.yaml[/]")
+                self._log(f"  [dim]expected: implants/{beacon.implant_id}/codebook.yaml[/]")
                 self._log("  [yellow]Sending raw (no encoding)[/]")
                 encoded = raw
             else:
@@ -1003,7 +1012,7 @@ def main() -> None:
         "--serve-dir",
         type=Path,
         default=None,
-        help="Root output directory (e.g. out/). Files accessible at GET /serve/<implant-id>/<filename>",
+        help="Root output directory (e.g. implants/). Files accessible at GET /serve/<implant-id>/<filename>",
     )
     args = parser.parse_args()
 

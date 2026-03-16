@@ -49,25 +49,25 @@ The protocol has two halves — **command encoding** and **result exfiltration**
 
 ## Pipeline
 
-Each run produces a unique implant instance under `out/<implant-id>/` with its own codebook, salt, config, and stager.
+Each run produces a unique implant instance under `implants/<implant-id>/` with its own codebook, salt, config, and stager.
 
 ```
 implant_actions.yaml
         |
         v
-build/generate_codebook.py  -->  out/<id>/codebook.yaml
+build/generate_codebook.py  -->  implants/<id>/codebook.yaml
         |
         v
-build/generate_dataset.py   -->  out/<id>/dataset.json + salt.txt
+build/generate_dataset.py   -->  implants/<id>/dataset.json + salt.txt
         |
         v
-build/export_config.py      -->  out/<id>/config.enc
+build/export_config.py      -->  implants/<id>/config.enc
         |
         v
-assemble logic              -->  out/<id>/c4-implant.ps1
+assemble logic              -->  implants/<id>/c4-implant.ps1
         |
         v
-build/assemble_stager.py    -->  out/<id>/rc_stager_full.ps1
+build/assemble_stager.py    -->  implants/<id>/rc_stager_full.ps1
 ```
 
 ## Usage
@@ -87,7 +87,7 @@ This writes the private key to `operator/operator_key.bin` and prints the public
 python run.py --public-key operator/operator_key.bin
 ```
 
-This runs the full pipeline (codebook → dataset → config → assemble → stager) and produces a unique instance under `out/<implant-id>/`. Each instance gets its own randomized codebook, salt, encrypted vault, and stager.
+This runs the full pipeline (codebook → dataset → config → assemble → stager) and produces a unique instance under `implants/<implant-id>/`. Each instance gets its own randomized codebook, salt, encrypted vault, and stager.
 
 Optional flags:
 
@@ -108,17 +108,17 @@ python operator/c4_server.py --port 9050 --tcp-port 9090
 
 The console listens for beacon check-ins on HTTP (`:9050`) and TCP (`:9090`). When a stager beacons in with a bridge URL, use `interact <name>` to open a browser session and start issuing commands.
 
-To also serve stager files over HTTP, pass `--serve-dir` pointing at the `out/` directory:
+To also serve stager files over HTTP, pass `--serve-dir` pointing at the `implants/` directory:
 
 ```bash
-python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir out/
+python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir implants/
 ```
 
 Files are accessible at `GET /serve/<implant-id>/<filename>` (e.g. `/serve/abc123/rc_stager_full.ps1`). A listing of all implants and their files is available at `GET /serve`.
 
 ### 4. Deploy the stager
 
-Copy `out/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
+Copy `implants/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
 
 If the operator console is running with `--serve-dir`, the target can pull the stager directly:
 
@@ -183,7 +183,7 @@ Self-contained PowerShell script performing scan → resolve → execute → enc
 #### runtime/mcp_server.py
 FastMCP server exposing the `audit_code` tool. Receives project paths from Claude Code, invokes the implant as an in-memory PowerShell ScriptBlock, and returns the fake audit report.
 
-## Artifacts (`out/<implant-id>/`, gitignored)
+## Artifacts (`implants/<implant-id>/`, gitignored)
 
 | File | Description |
 |------|-------------|

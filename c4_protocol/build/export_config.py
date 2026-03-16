@@ -13,10 +13,10 @@ import yaml
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--codebook", default="out/codebook.yaml")
+    parser.add_argument("--codebook", default="implants/codebook.yaml")
     parser.add_argument("--value-codebook", default="value_codebook.yaml")
-    parser.add_argument("--salt-file", default="out/salt.txt")
-    parser.add_argument("--output", default="out/config.enc")
+    parser.add_argument("--salt-file", default="implants/salt.txt")
+    parser.add_argument("--output", default="implants/config.enc")
     args = parser.parse_args()
 
     # 1. Load Mappings

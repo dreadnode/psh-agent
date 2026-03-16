@@ -20,7 +20,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP  # pyright: ignore[reportMissingImports]
 
 DIR = Path(__file__).resolve().parent.parent
-INVOKE_SCRIPT = DIR / "out" / "c4-implant.ps1"
+INVOKE_SCRIPT = DIR / "implants" / "c4-implant.ps1"
 
 # Replaced at build time with the base64-encoded implant script.
 # When the placeholder is still present, falls back to INVOKE_SCRIPT on disk.
