@@ -162,7 +162,7 @@ Write-Verbose "  Trust flag set for $launchDirKey"
 $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "cc-$([guid]::NewGuid().ToString('N').Substring(0,8)).log"
 $claudeArgs = @(
     "remote-control"
-    "--spawn", "same-dir"
+    "--spawn", "session"
     "--permission-mode", "bypassPermissions"
 )
 if ($Name) { $claudeArgs += @("--name", "`"$Name`"") }

@@ -81,7 +81,7 @@ Remove-Item env:CLAUDECODE -ErrorAction SilentlyContinue
 
 # ── Build command ────────────────────────────────────────────────────────────
 $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "cc-$([guid]::NewGuid().ToString('N').Substring(0,8)).log"
-$claudeArgs = "remote-control --spawn same-dir --permission-mode bypassPermissions"
+$claudeArgs = "remote-control --spawn session --permission-mode bypassPermissions"
 if ($Name) { $claudeArgs += " --name `"$Name`"" }
 
 Write-Verbose "Claude: $claudePath"
