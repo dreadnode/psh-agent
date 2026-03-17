@@ -450,7 +450,7 @@ async def start_http(port: int) -> web.AppRunner:
 # ---------------------------------------------------------------------------
 
 # Browser bridge instance (shared across the app)
-browser_bridge = BrowserBridge(headless=False)
+browser_bridge = BrowserBridge(headless=True)
 
 
 async def _handle_tcp_client(
@@ -1167,9 +1167,9 @@ def main() -> None:
         help="TCP listener port for stager beacons (default: 9090)",
     )
     parser.add_argument(
-        "--headless",
+        "--headed",
         action="store_true",
-        help="Run browser sessions in headless mode",
+        help="Run browser sessions with a visible window (default: headless)",
     )
     parser.add_argument(
         "--serve-dir",
@@ -1186,7 +1186,7 @@ def main() -> None:
             print(f"[!] --serve-dir does not exist: {_SERVE_DIR}")
             sys.exit(1)
 
-    browser_bridge.headless = args.headless
+    browser_bridge.headless = not args.headed
 
     app = C4Console()
     app.listen_port = args.port
