@@ -287,7 +287,7 @@ def main() -> None:
     from coolname import generate_slug  # pyright: ignore[reportPrivateImportUsage]
 
     full_uuid = uuid.uuid4()
-    short_hex = full_uuid.hex[:12]  # 48-bit suffix
+    short_hex = full_uuid.hex[:4]  # 16-bit suffix
     implant_id = f"{generate_slug(2)}-{short_hex}"
     if args.seed is None:
         args.seed = full_uuid.int % (2**31)

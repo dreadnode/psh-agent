@@ -524,8 +524,12 @@ class BeaconListItem(ListItem):
     def compose(self) -> ComposeResult:
         status = "●" if self.beacon.is_alive else "○"
         color = "green" if self.beacon.is_alive else "red"
+        implant = self.beacon.implant_id[:20] if self.beacon.implant_id else ""
+        ip = self.beacon.ip
         yield Label(
-            f"[{color}]{status}[/] {self.beacon.display_name}",
+            f"[{color}]{status}[/] {self.beacon.display_name}\n"
+            f"  [dim]{implant}[/]\n"
+            f"  [dim]{ip}[/]",
             markup=True,
         )
 
@@ -590,7 +594,7 @@ class C4Console(App):
     }
 
     #beacon-sidebar {
-        width: 30;
+        width: 36;
         border-right: solid $accent;
         height: 100%;
     }
@@ -1116,8 +1120,9 @@ class C4Console(App):
         self._log("\n[bold]Active Beacons:[/]")
         for b in beacons:
             status = "[green]●[/]" if b.is_alive else "[red]○[/]"
+            implant = b.implant_id[:24] if b.implant_id else "—"
             self._log(
-                f"  {status} {b.display_name:<20} {b.ip:<16} {b.username:<12} {b.last_seen_ago}"
+                f"  {status} {b.display_name:<20} {b.ip:<16} {implant:<26} {b.last_seen_ago}"
             )
         self._log("")
 
