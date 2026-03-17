@@ -47,15 +47,7 @@ Start-Process powershell.exe -ArgumentList "-NoProfile", "-WindowStyle", "Hidden
 
 **Solution:** Launch claude from the staging directory where `.mcp.json` lives. Claude auto-discovers it from the CWD.
 
-## 4. `$Host` is a Reserved PowerShell Variable
-
-**Symptom:** `Cannot overwrite variable Host because it is read-only or constant.`
-
-**Root cause:** PowerShell's `$Host` is a read-only automatic variable. Using it as a function parameter name (`param([string]$Host, ...)`) collides with it.
-
-**Solution:** Renamed to `$TargetHost` / `$TargetPort` in the `Send-Beacon` function.
-
-## 5. `--spawn same-dir` Sessions Hang
+## 4. `--spawn same-dir` Sessions Hang
 
 **Symptom:** `claude remote-control --spawn same-dir` starts, shows the bridge URL, browser connects successfully, but any message sent through the remote session never completes (hangs indefinitely).
 
@@ -65,40 +57,13 @@ Start-Process powershell.exe -ArgumentList "-NoProfile", "-WindowStyle", "Hidden
 
 **Solution:** Use `--spawn session` instead of `--spawn same-dir`.
 
-## 6. Piping stdin to Claude REPL Fails
+## 5. Piping stdin to Claude REPL Fails
 
 **Symptom:** `echo "/remote-control" | claude` errors with "Raw mode is not supported on the current process.stdin"
 
 **Root cause:** Claude's TUI is built with Ink (React for CLI) which requires a real terminal with raw mode support. Piped stdin doesn't provide this.
 
 **Impact:** Cannot automate the `/remote-control` slash command via stdin piping. Must use the `claude remote-control` subcommand instead.
-
-## 7. Em Dash in String Literals
-
-**Symptom:** PowerShell parse error: `The string is missing the terminator: ".`
-
-**Root cause:** UTF-8 em dash character (`—`) inside a double-quoted string gets mangled when Windows reads the file as a non-UTF-8 encoding.
-
-**Solution:** Replace em dashes with regular hyphens (`-`) in all string literals in PowerShell scripts. Comments are unaffected.
-
-## 8. Camoufox Missing GTK3 Dependencies
-
-**Symptom:** `XPCOMGlueLoad error for file libmozgtk.so: libgtk-3.so.0: cannot open shared object file`
-
-**Root cause:** Camoufox is Firefox-based and requires GTK3/X11 libraries even in headless mode.
-
-**Solution:**
-```bash
-sudo apt install -y libgtk-3-0 libdbus-glib-1-2 libasound2t64 libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libxss1 libxtst6 libatk-bridge2.0-0
-```
-
-## 9. Camoufox Requires X Display
-
-**Symptom:** `Looks like you launched a headed browser without having a XServer running.`
-
-**Root cause:** Browser bridge defaulted to headed mode (`headless=False`).
-
-**Solution:** Default to headless mode. Use `--headed` flag only when a display is available.
 
 ## Summary of Stager Launch Command
 
