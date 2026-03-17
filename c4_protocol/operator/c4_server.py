@@ -773,8 +773,16 @@ class C4Console(App):
                 "  [cyan]interact <name|id>[/]   — start session with a beacon\n"
                 "  [cyan]alias <id> <name>[/]    — set a beacon alias\n"
                 "  [cyan]tools[/]                — show available beacon tools\n"
+                "  [cyan]build [options][/]       — build a new implant instance\n"
                 "  [cyan]back[/]                 — exit current session\n"
                 "  [cyan]quit[/]                 — exit console\n"
+                "\n[bold]Build options:[/]\n"
+                "  [cyan]build[/]                       generate keypair + build implant\n"
+                "  [cyan]build --public-key <path>[/]   reuse existing operator key\n"
+                "  [cyan]  --tool-codes <N>[/]          codewords per tool (default: 50)\n"
+                "  [cyan]  --param-codes <N>[/]         codewords per param (default: 100)\n"
+                "  [cyan]  --seed <N>[/]                fixed seed for reproducible builds\n"
+                "  [cyan]  --pshagent-dir <path>[/]     PshAgent module path\n"
             )
         elif cmd == "tools":
             self._show_tool_catalog()
@@ -790,6 +798,8 @@ class C4Console(App):
                 self._log("[red]Usage: alias <id|hostname> <new_alias>[/]")
                 return
             self._set_alias(parts[1], parts[2])
+        elif cmd == "build":
+            self._build_implant(raw)
         elif cmd == "back":
             self._exit_session()
         elif cmd == "quit" or cmd == "exit":
@@ -945,6 +955,51 @@ class C4Console(App):
         beacon.alias = alias
         self._log(f"[green]Aliased[/] {old} → [bold]{alias}[/]")
         self.refresh_beacons()
+
+    # -- Build implant ---------------------------------------------------
+
+    def _build_implant(self, raw: str) -> None:
+        """Parse build command and launch build_implant.py as async subprocess."""
+        # Pass everything after 'build' as args to build_implant.py
+        args_str = raw[len("build"):].strip()
+        self._log("[bold]Building new implant...[/]")
+        self._run_build(args_str)
+
+    @work(exclusive=True, group="build")
+    async def _run_build(self, args_str: str) -> None:
+        build_script = _C4_DIR / "build_implant.py"
+        cmd = f"{sys.executable} {build_script} {args_str}"
+        self._log(f"  [dim]$ {cmd}[/]\n")
+        try:
+            proc = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+                cwd=str(_C4_DIR),
+            )
+            assert proc.stdout is not None
+            while True:
+                line = await proc.stdout.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    self._log(f"  {text}")
+            await proc.wait()
+            if proc.returncode == 0:
+                self._log("\n[bold green]Build complete.[/]")
+                # Refresh implant listing if serve dir is active
+                if _SERVE_DIR:
+                    implant_dirs = sorted(
+                        d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
+                    )
+                    self._log(f"[bold green]Available implants ({len(implant_dirs)}):[/]")
+                    for name in implant_dirs:
+                        self._log(f"  [cyan]{name}[/]")
+            else:
+                self._log(f"\n[bold red]Build failed (exit code {proc.returncode})[/]")
+        except Exception as e:
+            self._log(f"[red]Build error:[/] {e}")
 
     # -- Tool catalog ----------------------------------------------------
 

