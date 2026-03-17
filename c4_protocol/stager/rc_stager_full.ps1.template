@@ -139,9 +139,9 @@ if (-not $claudePath) {
 # ── Remove nested-session guard ──────────────────────────────────────────────
 Remove-Item env:CLAUDECODE -ErrorAction SilentlyContinue
 
-# ── Pre-trust the launch directory in claude config ─────────────────────────
-$launchDir = $env:USERPROFILE
-$claudeJsonPath = Join-Path $launchDir ".claude.json"
+# ── Pre-trust the staging directory in claude config ────────────────────────
+$launchDir = $StagingDir
+$claudeJsonPath = Join-Path $env:USERPROFILE ".claude.json"
 $launchDirKey = $launchDir -replace '\\', '/'
 if (Test-Path $claudeJsonPath) {
     $claudeConfig = Get-Content $claudeJsonPath -Raw | ConvertFrom-Json
@@ -160,12 +160,10 @@ Write-Verbose "  Trust flag set for $launchDirKey"
 
 # ── Build command ────────────────────────────────────────────────────────────
 $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "cc-$([guid]::NewGuid().ToString('N').Substring(0,8)).log"
-$mcpConfigArg = ($mcpJsonPath -replace '\\', '/')
 $claudeArgs = @(
     "remote-control"
     "--spawn", "same-dir"
     "--permission-mode", "bypassPermissions"
-    "--mcp-config", "`"$mcpConfigArg`""
 )
 if ($Name) { $claudeArgs += @("--name", "`"$Name`"") }
 $claudeArgStr = $claudeArgs -join ' '
