@@ -63,6 +63,37 @@ from textual.widgets import (
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Session logger (persistent file log of all C2 interactions)
+# ---------------------------------------------------------------------------
+
+_SESSION_LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
+_session_logger: logging.Logger | None = None
+
+
+def _init_session_logger() -> logging.Logger:
+    global _session_logger
+    if _session_logger is not None:
+        return _session_logger
+    _SESSION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    log_path = _SESSION_LOG_DIR / f"c2_session_{ts}.log"
+    _session_logger = logging.getLogger("c4.session")
+    _session_logger.setLevel(logging.DEBUG)
+    _session_logger.propagate = False
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    _session_logger.addHandler(handler)
+    _session_logger.info("C4 session log started")
+    return _session_logger
+
+
+def slog(msg: str) -> None:
+    """Write to the persistent session log file."""
+    logger = _init_session_logger()
+    logger.info(msg)
+
+
+# ---------------------------------------------------------------------------
 # Tool catalog (loaded from implant_actions.yaml)
 # ---------------------------------------------------------------------------
 
@@ -452,12 +483,14 @@ async def _handle_tcp_client(
                 }
             )
             log.info("BRIDGE beacon: %s → %s", implant_id[:12], bridge_url)
+            slog(f"BEACON BRIDGE | implant={implant_id} url={bridge_url} ip={addr[0] if addr else '?'}")
             if _app_ref is not None:
                 _app_ref.post_message(C4Console.BridgeBeacon(beacon.id, bridge_url))
 
         elif msg_type == "SESSION" and len(parts) == 3:
             implant_id = parts[1]
             log.info("SESSION beacon: %s → %s", implant_id[:12], parts[2])
+            slog(f"BEACON SESSION | implant={implant_id} url={parts[2]}")
             if _app_ref is not None:
                 _app_ref.post_message(C4Console.BeaconCheckin(implant_id))
 
@@ -840,6 +873,11 @@ class C4Console(App):
         self._log(
             f"\n[bold green]Entered session with {beacon.display_name}[/] ({beacon.id[:12]})"
         )
+        if beacon.bridge_url:
+            self._log(f"  [bold]Bridge:[/]  {beacon.bridge_url}")
+        if beacon.implant_id:
+            self._log(f"  [bold]Implant:[/] {beacon.implant_id}")
+        self._log("")
 
         # Auto-open browser if we have a bridge URL
         if beacon.bridge_url and beacon.implant_id:
@@ -884,6 +922,7 @@ class C4Console(App):
             return
 
         self._log(f"[bold]C4[/] ({beacon.display_name}) > {raw}")
+        slog(f"CMD | beacon={beacon.display_name} implant={beacon.implant_id} raw={raw}")
 
         # Parse operator input into action dict
         result = parse_operator_command(raw)
@@ -919,6 +958,8 @@ class C4Console(App):
                     f"  [dim]encoded →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
                 )
 
+        slog(f"ENCODED | {encoded}")
+
         # Deliver via browser bridge if available, otherwise queue for HTTP poll
         if beacon.implant_id and beacon.implant_id in browser_bridge.active_sessions:
             self._log("  [dim]sending via browser...[/]")
@@ -940,6 +981,7 @@ class C4Console(App):
     async def _send_via_browser(self, implant_id: str, encoded: str) -> None:
         try:
             response = await browser_bridge.send_and_receive(implant_id, encoded)
+            slog(f"RESPONSE | implant={implant_id} len={len(response)}\n{response}")
             self._log("\n[bold cyan]Response:[/]")
             # Truncate very long responses for the TUI
             if len(response) > 2000:
@@ -949,6 +991,7 @@ class C4Console(App):
                 self._log(response)
             self._log("")
         except Exception as e:
+            slog(f"ERROR | implant={implant_id} browser_send_failed: {e}")
             self._log(f"  [red]Browser send failed:[/] {e}")
 
     # -- Alias -----------------------------------------------------------
