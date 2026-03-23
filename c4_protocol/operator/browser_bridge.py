@@ -2,6 +2,11 @@
 """
 Browser bridge for Claude Code remote-control sessions.
 
+Two modes of operation:
+  1. Local mode (BrowserBridge): Direct Playwright/Camoufox browser automation
+  2. Remote mode (BrowserBridgeClient): Forwards commands via WebSocket to a
+     local browser bridge service running on the operator's machine
+
 Uses Camoufox (Playwright-based anti-detect Firefox) to automate interaction
 with the Claude Code web UI.  The bridge can:
   - Open a session from a bridge URL
@@ -12,10 +17,18 @@ with the Claude Code web UI.  The bridge can:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout, async_playwright
+
+# websockets is only needed for BrowserBridgeClient (remote mode)
+try:
+    import websockets
+except ImportError:
+    websockets = None  # type: ignore
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +91,7 @@ class BrowserSession:
     bridge_url: str
     page: Page | None = None
     context: BrowserContext | None = None
-    _browser: AsyncCamoufox | None = field(default=None, repr=False)
+    _browser: Any = field(default=None, repr=False)  # AsyncCamoufox instance
     _msg_count_at_send: int = 0
 
 
@@ -348,3 +361,109 @@ class BrowserBridge:
             for sid, s in self._sessions.items()
             if s.page and not s.page.is_closed()
         ]
+
+
+# ---------------------------------------------------------------------------
+# Remote Browser Bridge Client (connects to local service via WebSocket)
+# ---------------------------------------------------------------------------
+
+
+class BrowserBridgeClient:
+    """
+    Client that forwards browser commands to a local browser bridge service.
+
+    Used when running C4 server on a remote machine without browser auth.
+    Connects via WebSocket (typically through SSH tunnel) to browser_bridge_local.py
+    running on the operator's machine.
+    """
+
+    def __init__(self, ws_url: str = "ws://localhost:8888") -> None:
+        if websockets is None:
+            raise ImportError("websockets package required for remote bridge mode: pip install websockets")
+        self.ws_url = ws_url
+        self._ws = None  # WebSocket connection
+        self._active_sessions: set[str] = set()
+        self._lock = asyncio.Lock()
+
+    async def connect(self) -> None:
+        """Connect to the local browser bridge service."""
+        log.info("Connecting to local browser bridge at %s", self.ws_url)
+        self._ws = await websockets.connect(self.ws_url)
+        # Ping to verify connection
+        response = await self._send({"action": "ping"})
+        if response.get("status") == "ok":
+            log.info("Connected to local browser bridge")
+        else:
+            raise RuntimeError(f"Failed to connect: {response}")
+
+    async def disconnect(self) -> None:
+        """Disconnect from the local browser bridge service."""
+        if self._ws:
+            await self._ws.close()
+            self._ws = None
+        log.info("Disconnected from local browser bridge")
+
+    async def _send(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Send a request and wait for response."""
+        if not self._ws:
+            raise RuntimeError("Not connected to browser bridge")
+        async with self._lock:
+            await self._ws.send(json.dumps(request))
+            response = await self._ws.recv()
+            return json.loads(response)
+
+    async def open_session(self, implant_id: str, bridge_url: str) -> None:
+        """Open a browser session on the local machine."""
+        response = await self._send({
+            "action": "open_session",
+            "implant_id": implant_id,
+            "bridge_url": bridge_url,
+        })
+        if response.get("status") == "error":
+            raise RuntimeError(response.get("error", "unknown error"))
+        self._active_sessions.add(implant_id)
+
+    async def send_message(self, implant_id: str, text: str) -> None:
+        """Send a message to the Claude session."""
+        response = await self._send({
+            "action": "send_message",
+            "implant_id": implant_id,
+            "text": text,
+        })
+        if response.get("status") == "error":
+            raise RuntimeError(response.get("error", "unknown error"))
+
+    async def wait_for_response(self, implant_id: str, timeout: float = 120.0) -> str:
+        """Wait for Claude's response and return the text."""
+        response = await self._send({
+            "action": "wait_response",
+            "implant_id": implant_id,
+            "timeout": timeout,
+        })
+        if response.get("status") == "error":
+            raise RuntimeError(response.get("error", "unknown error"))
+        return response.get("data", "")
+
+    async def send_and_receive(self, implant_id: str, text: str, timeout: float = 120.0) -> str:
+        """Send a message and wait for the response. Returns response text."""
+        await self.send_message(implant_id, text)
+        return await self.wait_for_response(implant_id, timeout=timeout)
+
+    async def close_session(self, implant_id: str) -> None:
+        """Close a browser session."""
+        response = await self._send({
+            "action": "close_session",
+            "implant_id": implant_id,
+        })
+        self._active_sessions.discard(implant_id)
+        if response.get("status") == "error":
+            log.warning("Error closing session: %s", response.get("error"))
+
+    async def close_all(self) -> None:
+        """Close all browser sessions."""
+        for implant_id in list(self._active_sessions):
+            await self.close_session(implant_id)
+
+    @property
+    def active_sessions(self) -> list[str]:
+        return list(self._active_sessions)

