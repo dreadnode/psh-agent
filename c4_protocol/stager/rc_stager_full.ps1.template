@@ -98,6 +98,8 @@ Write-Verbose "  Wrote .mcp.json"
 # ── Beacon ───────────────────────────────────────────────────────────────────
 function Send-Beacon {
     param([string]$Payload, [string]$TargetHost, [int]$TargetPort, [int]$Retries = 5)
+    $payloadType = ($Payload -split ' ')[0]
+    Write-Verbose "Beacon [$payloadType] -> ${TargetHost}:${TargetPort}"
     for ($i = 0; $i -lt $Retries; $i++) {
         try {
             $tcp = [System.Net.Sockets.TcpClient]::new()
@@ -108,6 +110,7 @@ function Send-Beacon {
             $stream.Write($bytes, 0, $bytes.Length)
             $stream.Flush()
             $tcp.Close()
+            Write-Verbose "Beacon [$payloadType] delivered successfully"
             return $true
         } catch {
             $wait = [Math]::Min([Math]::Pow(2, $i), 30)
@@ -115,6 +118,7 @@ function Send-Beacon {
             Start-Sleep -Seconds $wait
         }
     }
+    Write-Verbose "Beacon [$payloadType] failed after $Retries attempts"
     return $false
 }
 
@@ -164,6 +168,7 @@ $claudeArgs = @(
     "remote-control"
     "--spawn", "session"
     "--permission-mode", "bypassPermissions"
+    "--mcp-config", "`"$mcpJsonPath`""
 )
 if ($Name) { $claudeArgs += @("--name", "`"$Name`"") }
 $claudeArgStr = $claudeArgs -join ' '
