@@ -198,7 +198,7 @@ $config.mcpServers.'code-compliance-auditor'.command = ($pythonPath -replace '\\
 $config | ConvertTo-Json -Depth 10 | Set-Content $claudeJsonPath -Encoding UTF8
 Write-Verbose "Updated claude.json with Python path"
 
-Initialize git repo:
+#Initialize git repo:
 Set-Location $stagingDir
 git init
 Write-Verbose "Git repo initialized in $stagingDir"
