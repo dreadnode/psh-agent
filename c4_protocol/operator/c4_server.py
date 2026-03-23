@@ -494,6 +494,15 @@ async def _handle_tcp_client(
             if _app_ref is not None:
                 _app_ref.post_message(C4Console.BeaconCheckin(implant_id))
 
+        elif msg_type == "HEARTBEAT" and len(parts) >= 2:
+            implant_id = parts[1]
+            # Update last_seen for existing beacon
+            if implant_id in registry._beacons:
+                registry._beacons[implant_id].last_seen = time.time()
+                log.debug("HEARTBEAT: %s", implant_id[:12])
+            else:
+                log.warning("HEARTBEAT from unknown implant: %s", implant_id[:12])
+
         else:
             log.info("Unknown TCP beacon from %s: %s", addr, line[:120])
 

