@@ -6,4 +6,5 @@ mcp[cli]
 playwright
 pyyaml
 rich
+rigging
 textual

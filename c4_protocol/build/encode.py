@@ -340,10 +340,10 @@ def enrich(prompt: str, model=ENRICH_MODEL):
     - be too verbose. just give a few extra sentences of details.
     """
     generator = rg.get_generator(model)
-    chat = generator.chat([
+    chat = rg.await_(generator.chat([
       {"role": "system", "content": system_prompt},
       {"role": "user", "content": f"Add details to this coding prompt:\n\n {prompt}"}
-    ]).run_sync()
+    ]).run())
     return " ".join([prompt, str(chat.last.content)])
 
 
