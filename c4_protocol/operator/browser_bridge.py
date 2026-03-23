@@ -91,8 +91,11 @@ class BrowserSession:
 class BrowserBridge:
     """Manages browser sessions for Claude Code remote-control."""
 
-    def __init__(self, headless: bool = False) -> None:
+    def __init__(self, headless: bool = False, user_data_dir: str | None = None) -> None:
         self.headless = headless
+        # Persistent profile directory for Claude login session.
+        # If provided, the browser will reuse cookies/localStorage from this dir.
+        self.user_data_dir = user_data_dir
         self._sessions: dict[str, BrowserSession] = {}
 
     async def open_session(self, implant_id: str, bridge_url: str) -> BrowserSession:
@@ -105,9 +108,21 @@ class BrowserBridge:
 
         log.info("Opening browser for implant %s → %s", implant_id[:12], bridge_url)
 
-        browser = AsyncCamoufox(headless=self.headless)
-        ctx = await browser.__aenter__()
-        page = await ctx.new_page()
+        # Use persistent context if user_data_dir is provided (for Claude login session)
+        if self.user_data_dir:
+            browser = AsyncCamoufox(
+                headless=self.headless,
+                persistent_context=True,
+                user_data_dir=self.user_data_dir,
+            )
+            ctx = await browser.__aenter__()
+            # persistent_context returns the context directly, use existing pages or create one
+            pages = ctx.pages
+            page = pages[0] if pages else await ctx.new_page()
+        else:
+            browser = AsyncCamoufox(headless=self.headless)
+            ctx = await browser.__aenter__()
+            page = await ctx.new_page()
 
         await page.goto(bridge_url, wait_until="domcontentloaded")
 

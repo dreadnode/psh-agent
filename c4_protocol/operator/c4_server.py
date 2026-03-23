@@ -1172,6 +1172,12 @@ def main() -> None:
         help="Run browser sessions with a visible window (default: headless)",
     )
     parser.add_argument(
+        "--browser-profile",
+        type=Path,
+        default=None,
+        help="Path to persistent browser profile directory (for Claude login session)",
+    )
+    parser.add_argument(
         "--serve-dir",
         type=Path,
         default=None,
@@ -1187,6 +1193,8 @@ def main() -> None:
             sys.exit(1)
 
     browser_bridge.headless = not args.headed
+    if args.browser_profile:
+        browser_bridge.user_data_dir = str(args.browser_profile.resolve())
 
     app = C4Console()
     app.listen_port = args.port
