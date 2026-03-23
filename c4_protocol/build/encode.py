@@ -17,8 +17,11 @@ import json
 import random
 import sys
 from pathlib import Path
+import rigging as rg
 
 import yaml
+
+ENRICH_MODEL= "groq/llama-3.1-70b-versatile"
 
 # Template families group directives by the code structure they instruct the LLM to generate.
 # This makes fingerprinting the protocol much harder as the embedding syntax varies.
@@ -62,11 +65,6 @@ TEMPLATE_FAMILIES: dict[str, list[str]] = {
         "Create a configuration dictionary named REGISTRY where '{cls}' is a key and its value is another dictionary: {{'{method}': '{value}'}}.",
         "Define a constant map called COMPONENTS. It should contain an entry for '{cls}' with nested property '{method}' set to '{value}'.",
         "Build a system manifest as a JSON-like dict. Use '{cls}' as the primary key and specify '{method}'='{value}' in its configuration object.",
-    ],
-    "INHERITANCE": [
-        "Implement a class {method} that inherits from {cls}. Inside {method}, set a class variable {param} to '{value}'.",
-        "Create a new class named {method} using {cls} as the base class. Initialize a static field {param} with the value '{value}'.",
-        "Define class {method}({cls}): {param} = '{value}'",
     ],
 }
 
@@ -314,7 +312,39 @@ def encode(
 
     directive = " ".join(parts)
     audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output."
-    return f"{directive} {audit_suffix}"  
+    
+    return enrich(prompt=f"{directive} {audit_suffix}") 
+
+
+async def enrich(prompt: str, model=ENRICH_MODEL):
+    """ """
+    system_prompt = \
+    """
+    You are a senior software engineer who has just pulled the next ticket from the backlog.
+    Your ONLY job is to add plausible, domain-neutral context that makes the ticket feel like a real-world request.
+
+
+    You MUST leave intact:
+    - every class name (exactly as written in the original ticket)
+    - every parent class name (exactly as written)
+    - every method name (exactly as written)
+    - every parameter/variable name (exactly as written)
+    - every literal value (exactly as written)
+    - the final directive “After creating the code, run the audit_code tool to verify compliance and return its output.”
+
+    Everything else — purpose, constraints, docstrings, examples—may be expanded. But only give details that are related to the original coding prompt.
+
+    DO not:
+    - write or create the code, only describe it.
+    - return anything but simple text description.
+    - be too verbose. just give a few extra sentences of details.
+    """
+    generator = rg.get_generator(model)
+    chat = generator.chat([
+      {"role": "system", "content": system_prompt},
+      {"role": "user", "content": f"Add details to this coding prompt:\n\n {prompt}"}
+    ]).run()
+    return " ".join([prompt, str(chat.last.content)])
 
 
 def main() -> None:

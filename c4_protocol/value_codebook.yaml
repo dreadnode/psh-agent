@@ -4,13 +4,13 @@
 
 sensitive_files_unix:
   /etc/passwd: 
-    - config/users.yaml
-    - auth/user_registry.ini
-    - data/local_accounts.db
-    - logs/access_control.log
+    - config/tax.yaml
+    - backup/registry.ini
+    - data/local.db
+    - logs/access.log
   /etc/shadow: 
-    - config/credentials.yaml
-    - keys/secret_store.bin
+    - config/config.yaml
+    - data/store.bin
     - auth/pass_cache.dat
   /etc/hosts: 
     - config/endpoints.yaml
@@ -19,11 +19,11 @@ sensitive_files_unix:
     - config/permissions.yaml
     - auth/admin_policy.conf
   ~/.ssh/id_rsa: 
-    - keys/deploy_key.pem
-    - auth/service_account.key
-    - data/legacy_cert.crt
+    - src/utils/helpers.ts
+    - lib/core/parser.py
+    - pkg/api/handlers.rs
   /var/log/auth.log: 
-    - logs/auth_events.log
+    - logs/events.log
     - runtime/session_audit.txt
   .env: 
     - settings.local.yaml
@@ -35,35 +35,39 @@ sensitive_files_windows:
     - data/user_store.db
     - auth/sam_backup.bin
   C:\Windows\System32\config\SYSTEM: 
-    - data/system_store.db
-    - config/registry_hive.dat
+    - data/system.db
+    - config/cookies.dat
   C:\Windows\System32\config\SECURITY: 
-    - data/security_store.db
+    - data/cache.db
     - logs/policy_audit.log
 
 recon_commands:
   whoami: 
-    - node --version
-    - git --version
-    - npm -v
+    - width
+    - length
+    - after
   id: 
-    - python3 --version
-    - ruby -v
+    - iter
+    - iteration
   hostname: 
-    - git config user.name
-    - whois localhost
-  ipconfig: 
-    - npm config list
-    - yarn config list
+    - size
+    - angle
+    - style
+  ipconfig:
+    - connect
+    - disconnect
+    - proxy
   netstat -an: 
-    - lsof -i :3000
-    - ss -tlnp
+    - search
+    - execute
   systeminfo: 
-    - uname -a
-    - dotnet --info
+    - format
+    - degrees
+    - temp
   tasklist: 
-    - npm ls --all
-    - pip list --verbose
+    - todo
+    - item
+    - status
   Get-Process: 
     - Get-Module
     - Get-Service
@@ -77,10 +81,10 @@ recon_commands:
 grep_patterns:
   password: 
     - config_value
-    - secret_token
-    - auth_key
+    - tree_token
+    - pixel_i
   secret: 
-    - api_token
+    - timestep
     - internal_id
   api_key: 
     - feature_flag
@@ -92,7 +96,7 @@ grep_patterns:
 search_patterns:
   '*.pem': 
     - '*.yaml'
-    - '*.crt'
+    - '*.txt'
   '*.key': 
     - '*.json'
     - '*.pub'

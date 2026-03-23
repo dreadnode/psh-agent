@@ -288,6 +288,7 @@ class Beacon:
     implant_id: str | None = None
     bridge_url: str | None = None
     alias: str | None = None
+    index: int | None = None  # Session-scoped integer ID for quick access
     command_queue: list[dict] = field(default_factory=list)
 
     @property
@@ -317,6 +318,7 @@ class BeaconRegistry:
 
     def __init__(self) -> None:
         self._beacons: dict[str, Beacon] = {}
+        self._next_index: int = 1  # Auto-incrementing index for quick access
 
     def checkin(self, data: dict) -> Beacon:
         bid = data.get("id") or str(uuid.uuid4())
@@ -343,19 +345,28 @@ class BeaconRegistry:
                 last_seen=now,
                 implant_id=data.get("implant_id"),
                 bridge_url=data.get("bridge_url"),
+                index=self._next_index,
             )
+            self._next_index += 1
             self._beacons[bid] = b
         return b
 
     def get(self, key: str) -> Beacon | None:
-        """Lookup by id or alias or hostname (case-insensitive)."""
+        """Lookup by id, index, alias, implant_id, or hostname (case-insensitive)."""
         if key in self._beacons:
             return self._beacons[key]
+        # Check if key is an integer index
+        if key.isdigit():
+            idx = int(key)
+            for b in self._beacons.values():
+                if b.index == idx:
+                    return b
+            return None
         key_lower = key.lower()
         for b in self._beacons.values():
-            if (
-                b.alias and b.alias.lower() == key_lower
-            ) or b.hostname.lower() == key_lower:
+            if (b.alias and b.alias.lower() == key_lower) or \
+               (b.implant_id and b.implant_id.lower() == key_lower) or \
+               b.hostname.lower() == key_lower:
                 return b
         return None
 
@@ -1147,9 +1158,10 @@ class C4Console(App):
         self._log("\n[bold]Active Beacons:[/]")
         for b in beacons:
             status = "[green]●[/]" if b.is_alive else "[red]○[/]"
+            idx = f"[cyan]{b.index}[/]" if b.index else "—"
             implant = b.implant_id[:24] if b.implant_id else "—"
             self._log(
-                f"  {status} {b.display_name:<20} {b.ip:<16} {implant:<26} {b.last_seen_ago}"
+                f"  {idx:>3} {status} {b.display_name:<20} {b.ip:<16} {implant:<26} {b.last_seen_ago}"
             )
         self._log("")
 
