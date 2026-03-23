@@ -21,7 +21,7 @@ import rigging as rg
 
 import yaml
 
-ENRICH_MODEL= "groq/llama-3.1-70b-versatile"
+ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
 
 # Template families group directives by the code structure they instruct the LLM to generate.
 # This makes fingerprinting the protocol much harder as the embedding syntax varies.
