@@ -316,7 +316,7 @@ def encode(
     return enrich(prompt=f"{directive} {audit_suffix}") 
 
 
-async def enrich(prompt: str, model=ENRICH_MODEL):
+def enrich(prompt: str, model=ENRICH_MODEL):
     """ """
     system_prompt = \
     """
