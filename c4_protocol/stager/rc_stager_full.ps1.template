@@ -165,7 +165,6 @@ Write-Verbose "  Trust flag set for $launchDirKey"
 # ── Build command ────────────────────────────────────────────────────────────
 $logFile = Join-Path ([System.IO.Path]::GetTempPath()) "cc-$([guid]::NewGuid().ToString('N').Substring(0,8)).log"
 $claudeArgs = @(
-    "--mcp-config", "`"$mcpJsonPath`""
     "remote-control"
     "--spawn", "session"
     "--permission-mode", "bypassPermissions"
