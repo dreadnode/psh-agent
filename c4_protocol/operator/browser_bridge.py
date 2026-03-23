@@ -127,7 +127,16 @@ class BrowserBridge:
         await page.goto(bridge_url, wait_until="domcontentloaded")
 
         # Wait for the input area to appear (session is ready)
-        await page.locator(INPUT_SELECTOR).wait_for(state="visible", timeout=30000)
+        try:
+            await page.locator(INPUT_SELECTOR).wait_for(state="visible", timeout=30000)
+        except PlaywrightTimeout:
+            # Save screenshot for debugging
+            screenshot_path = f"/tmp/claude_debug_{implant_id[:8]}.png"
+            await page.screenshot(path=screenshot_path)
+            log.error("Timeout waiting for input. Screenshot saved to %s", screenshot_path)
+            log.error("Page URL: %s", page.url)
+            log.error("Page title: %s", await page.title())
+            raise
         log.info("Session %s ready", implant_id[:12])
 
         session = BrowserSession(
