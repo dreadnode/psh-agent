@@ -190,6 +190,31 @@ if (-not $pythonPath) {
   Write-Verbose "Python found at: $pythonPath"
 
 # ════════════════════════════════════════════════════════════════════════════
+# Stage — python deps
+# ════════════════════════════════════════════════════════════════════════════
+py -m pip install mcp
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Stage — pwsh
+# ════════════════════════════════════════════════════════════════════════════
+$pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+if ($pwsh) {
+    Write-Host "PowerShell 7 already installed: $($pwsh.Source)"
+    pwsh --version
+} else {
+    Write-Host "PowerShell 7 not found. Installing..."
+    $msiUrl = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.1/PowerShell-7.4.1-win-x64.msi"
+    $msiPath = "$env:TEMP\pwsh.msi"
+
+    Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
+    Write-Host "Downloaded to $msiPath"
+
+    Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /quiet ADD_PATH=1" -Wait
+    Remove-Item $msiPath -ErrorAction SilentlyContinue
+}
+
+# ════════════════════════════════════════════════════════════════════════════
 # Stage — Write .mcp.json
 # ════════════════════════════════════════════════════════════════════════════
 
