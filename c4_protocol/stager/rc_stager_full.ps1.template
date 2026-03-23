@@ -208,7 +208,10 @@ if (-not $proc) {
 Write-Verbose "Claude PID: $($proc.Id)"
 
 # ── Tail log file until bridge URL is beaconed, then exit ────────────────────
-$bridgeRe  = [regex]'https://claude\.ai/code\?bridge=[\w-]+'
+# Bridge URL formats:
+#   - Old: https://claude.ai/code?bridge=XXX
+#   - New: https://claude.ai/code/session_XXX?bridge=YYY
+$bridgeRe  = [regex]'https://claude\.ai/code[/\w_]*\?bridge=[\w-]+'
 $sessionRe = [regex]'https://claude\.ai/code/session_[\w-]+'
 
 $bridgeUrl    = $null
