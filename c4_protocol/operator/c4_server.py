@@ -721,6 +721,11 @@ class C4Console(App):
         self._log(f"C2 server:     [bold]{self._local_ip}[/]")
         self._log(f"HTTP listener: [bold]{self._local_ip}:{self.listen_port}[/]")
         self._log(f"TCP  listener: [bold]{self._local_ip}:{self.tcp_port}[/] (stager beacons)")
+        if enrich_enabled():
+            self._log("Enrichment:    [bold green]enabled[/]")
+        else:
+            self._log("[bold red]⚠ WARNING: Enrichment disabled (GROQ_API_KEY not set)[/]")
+            self._log("[dim]  Commands will be blocked until GROQ_API_KEY is set[/]")
         if _SERVE_DIR:
             self._log(f"File serving:  [bold]GET /serve/<id>/<file>[/] from {_SERVE_DIR}")
             implant_dirs = sorted(

@@ -22,9 +22,7 @@ import rigging as rg
 
 import yaml
 
-ENRICH_API_KEY = False
-if os.environ.get("GROQ_API_KEY"):
-      MODEL_API_KEY = True
+ENRICH_API_KEY = bool(os.environ.get("GROQ_API_KEY"))
 
 ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
 
