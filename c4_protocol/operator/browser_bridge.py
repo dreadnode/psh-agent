@@ -15,8 +15,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from camoufox.async_api import AsyncCamoufox
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout
+from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout, async_playwright
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +96,7 @@ class BrowserBridge:
         # If provided, the browser will reuse cookies/localStorage from this dir.
         self.user_data_dir = user_data_dir
         self._sessions: dict[str, BrowserSession] = {}
+        self._playwright = None  # Playwright instance when using persistent context
 
     async def open_session(self, implant_id: str, bridge_url: str) -> BrowserSession:
         """Launch a Camoufox browser and navigate to the bridge URL."""
@@ -108,18 +108,21 @@ class BrowserBridge:
 
         log.info("Opening browser for implant %s → %s", implant_id[:12], bridge_url)
 
-        # Use persistent context if user_data_dir is provided (for Claude login session)
+        # Use persistent context with plain Playwright Firefox if user_data_dir is provided
+        # (Camoufox fingerprinting may break cross-browser session cookies)
         if self.user_data_dir:
-            browser = AsyncCamoufox(
-                headless=self.headless,
-                persistent_context=True,
+            log.info("Using Playwright Firefox with persistent profile: %s", self.user_data_dir)
+            self._playwright = await async_playwright().start()
+            ctx = await self._playwright.firefox.launch_persistent_context(
                 user_data_dir=self.user_data_dir,
+                headless=self.headless,
             )
-            ctx = await browser.__aenter__()
-            # persistent_context returns the context directly, use existing pages or create one
+            browser = None  # No separate browser object with persistent context
             pages = ctx.pages
             page = pages[0] if pages else await ctx.new_page()
         else:
+            # Use Camoufox for fresh sessions (anti-detection)
+            from camoufox.async_api import AsyncCamoufox
             browser = AsyncCamoufox(headless=self.headless)
             ctx = await browser.__aenter__()
             page = await ctx.new_page()
@@ -270,8 +273,13 @@ class BrowserBridge:
         session = self._sessions.pop(implant_id, None)
         if not session:
             return
+        if session.context:
+            await session.context.close()
         if session._browser:
             await session._browser.__aexit__(None, None, None)
+        if self._playwright:
+            await self._playwright.stop()
+            self._playwright = None
         log.info("Closed session %s", implant_id[:12])
 
     async def close_all(self) -> None:
