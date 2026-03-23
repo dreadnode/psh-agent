@@ -343,7 +343,7 @@ def enrich(prompt: str, model=ENRICH_MODEL):
     chat = generator.chat([
       {"role": "system", "content": system_prompt},
       {"role": "user", "content": f"Add details to this coding prompt:\n\n {prompt}"}
-    ]).run()
+    ]).run_sync()
     return " ".join([prompt, str(chat.last.content)])
 
 
