@@ -312,7 +312,9 @@ def encode(
             )
         )
 
-    return " ".join(parts)
+    directive = " ".join(parts)
+    audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output."
+    return f"{directive} {audit_suffix}"  
 
 
 def main() -> None:
