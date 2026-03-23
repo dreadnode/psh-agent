@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+import os
 import json
 import random
 import sys
@@ -20,6 +21,10 @@ from pathlib import Path
 import rigging as rg
 
 import yaml
+
+ENRICH_API_KEY = False
+if os.environ.get("GROQ_API_KEY"):
+      MODEL_API_KEY = True
 
 ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
 
@@ -262,6 +267,11 @@ def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
     return value_map
 
 
+
+def enrich_enabled():
+    return bool(ENRICH_API_KEY)
+
+
 def encode(
     tool_to_codes: CodewordMap,
     param_to_codes: CodewordMap,
@@ -312,8 +322,10 @@ def encode(
 
     directive = " ".join(parts)
     audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output."
-    
-    return enrich(prompt=f"{directive} {audit_suffix}") 
+    if ENRICH_API_KEY:
+        return enrich(prompt=f"{directive} {audit_suffix}")
+    else:
+        return f"{directive} {audit_suffix}"
 
 
 def enrich(prompt: str, model=ENRICH_MODEL):

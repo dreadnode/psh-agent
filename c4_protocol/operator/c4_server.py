@@ -32,6 +32,7 @@ from encode import (  # noqa: E402
     CodewordMap,
     ValueMap,
     encode as encode_action,
+    enrich_enabled,
     load_codebook,
     load_value_codebook,
 )
@@ -996,9 +997,11 @@ class C4Console(App):
                     self._log(f"  [red]Encoding failed: {e}[/]")
                     return
 
+                enriched = "[green]yes[/]" if enrich_enabled() else "[yellow]no[/]"
                 self._log(
                     f"  [dim]encoded →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
                 )
+                self._log(f"  [dim]enrichment:[/] {enriched}")
 
         slog(f"ENCODED | {encoded}")
 
