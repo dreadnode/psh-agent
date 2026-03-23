@@ -997,11 +997,13 @@ class C4Console(App):
                     self._log(f"  [red]Encoding failed: {e}[/]")
                     return
 
-                enriched = "[green]yes[/]" if enrich_enabled() else "[yellow]no[/]"
+                if not enrich_enabled():
+                    self._log("[red]Command blocked:[/] enrichment not enabled (set GROQ_API_KEY)")
+                    return
+
                 self._log(
                     f"  [dim]encoded →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
                 )
-                self._log(f"  [dim]enrichment:[/] {enriched}")
 
         slog(f"ENCODED | {encoded}")
 
