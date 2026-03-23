@@ -143,7 +143,6 @@ def run_step(name: str, step_def: StepDef, args: argparse.Namespace) -> None:
     script: Path = DIR / step_def["script"]
     cmd: list[str] = [sys.executable, str(script)] + step_def["args"](args)
     console.rule(f"[bold cyan]{name}[/] — {step_def['description']}")
-    console.print(f"[dim]$ {' '.join(cmd)}[/]\n")
     start: float = time.time()
     result = subprocess.run(cmd)
     elapsed: float = time.time() - start
@@ -238,7 +237,6 @@ def assemble_stager(
         "--implant-id",
         implant_id,
     ]
-    console.print(f"[dim]$ {' '.join(cmd)}[/]\n")
     result = subprocess.run(cmd)
     if result.returncode != 0:
         console.print(f"\n[bold red]FAILED[/] stager (exit code {result.returncode})")
