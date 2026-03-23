@@ -21,6 +21,7 @@ import logging
 import shutil
 import signal
 import subprocess
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -88,34 +89,106 @@ class BrowserSession:
 class LocalBrowserBridge:
     """Manages browser sessions using local Playwright."""
 
-    def __init__(self, headless: bool = False, chrome_profile: str | None = None) -> None:
+    def __init__(
+        self,
+        headless: bool = False,
+        chrome_profile: str | None = None,
+        cdp_url: str | None = None,
+    ) -> None:
         self.headless = headless
         # Chrome profile directory for persistent login
         # On macOS: ~/Library/Application Support/Google/Chrome/Default
         # On Linux: ~/.config/google-chrome/Default
         # On Windows: %LOCALAPPDATA%\Google\Chrome\User Data\Default
         self.chrome_profile = chrome_profile
+        # CDP URL to connect to existing Chrome instance (e.g. http://localhost:9222)
+        self.cdp_url = cdp_url
         self._sessions: dict[str, BrowserSession] = {}
         self._playwright = None
-        self._context = None  # Persistent context when using Chrome profile
+        self._browser = None  # Browser instance when connecting via CDP
+        self._context = None  # Browser context
 
     async def start(self) -> None:
         """Initialize Playwright browser."""
-        log.info("Starting Playwright browser (headless=%s)", self.headless)
         self._playwright = await async_playwright().start()
 
-        if self.chrome_profile:
+        if self.cdp_url:
+            # Connect to existing browser instance via CDP (Chrome DevTools Protocol)
+            log.info("[cyan]Connecting to existing browser at %s[/]", self.cdp_url, extra={"markup": True})
+
+            # First, verify the DevTools server is actually responding
+            browser_type = "unknown"
+            try:
+                version_url = f"{self.cdp_url}/json/version"
+                log.info("Checking DevTools endpoint: %s", version_url)
+                with urllib.request.urlopen(version_url, timeout=5) as resp:
+                    version_info = json.loads(resp.read())
+                    browser_str = version_info.get("Browser", "unknown")
+                    log.info("[green]DevTools responding: %s[/]", browser_str, extra={"markup": True})
+                    # Detect browser type from version string
+                    if "Firefox" in browser_str:
+                        browser_type = "firefox"
+                    else:
+                        browser_type = "chrome"
+            except urllib.error.URLError as e:
+                log.error("[red]Cannot reach DevTools at %s[/]", self.cdp_url, extra={"markup": True})
+                log.error("[red]Error: %s[/]", e.reason, extra={"markup": True})
+                log.error("")
+                log.error("[yellow]Browser is not running with remote debugging enabled.[/]", extra={"markup": True})
+                log.error("[yellow]To fix this:[/]", extra={"markup": True})
+                log.error("[yellow]  1. Quit ALL browser instances (check Activity Monitor)[/]", extra={"markup": True})
+                log.error("[yellow]  2. Start browser with: --remote-debugging-port=9222[/]", extra={"markup": True})
+                log.error("[yellow]  3. Or use: ./start_chrome_debug.sh or ./start_firefox_debug.sh[/]", extra={"markup": True})
+                raise RuntimeError(f"DevTools not responding at {self.cdp_url}") from e
+
+            try:
+                if browser_type == "firefox":
+                    # Firefox uses a WebSocket endpoint, get it from /json/version
+                    ws_url = version_info.get("webSocketDebuggerUrl")
+                    if ws_url:
+                        log.info("Firefox WebSocket URL: %s", ws_url)
+                        self._browser = await self._playwright.firefox.connect(ws_url)
+                    else:
+                        # Fallback: construct WebSocket URL
+                        port = self.cdp_url.split(":")[-1].rstrip("/")
+                        ws_url = f"ws://localhost:{port}"
+                        log.info("Trying Firefox WebSocket: %s", ws_url)
+                        self._browser = await self._playwright.firefox.connect(ws_url)
+                    browser_name = "Firefox"
+                else:
+                    # Chrome uses CDP
+                    self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_url)
+                    browser_name = "Chrome"
+
+                # Use the default context (has existing cookies/auth)
+                contexts = self._browser.contexts
+                if contexts:
+                    self._context = contexts[0]
+                    log.info("[green]Connected to existing %s (found %d contexts)[/]", browser_name, len(contexts), extra={"markup": True})
+                else:
+                    # Create new context if none exist
+                    self._context = await self._browser.new_context()
+                    log.info("[yellow]Connected to %s but no contexts found, created new one[/]", browser_name, extra={"markup": True})
+            except Exception as e:
+                log.error("[red]Failed to connect via CDP: %s[/]", e, extra={"markup": True})
+                if browser_type == "firefox":
+                    log.error("[yellow]Note: Firefox CDP support is limited. Chrome may work better.[/]", extra={"markup": True})
+                raise
+
+        elif self.chrome_profile:
             # Use persistent context with existing Chrome profile (has Claude login)
-            log.info("Using Chrome profile: %s", self.chrome_profile)
+            log.info("Starting Playwright with Chrome profile: %s", self.chrome_profile)
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=self.chrome_profile,
                 headless=self.headless,
                 channel="chrome",
             )
             log.info("[green]Browser started with persistent profile[/]", extra={"markup": True})
+
         else:
             # Fresh browser - will need to login manually
-            log.warning("[yellow]No Chrome profile specified - sessions may require login[/]", extra={"markup": True})
+            log.info("Starting fresh Playwright browser (headless=%s)", self.headless)
+            log.warning("[yellow]No Chrome profile or CDP specified - sessions may require login[/]", extra={"markup": True})
             browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 channel="chrome",
@@ -127,8 +200,12 @@ class LocalBrowserBridge:
         """Clean up browser resources."""
         for session in list(self._sessions.values()):
             await self._close_session(session.implant_id)
-        if self._context:
+        # Don't close context if connected via CDP (it's the user's browser)
+        if self._context and not self.cdp_url:
             await self._context.close()
+        if self._browser and self.cdp_url:
+            # Disconnect from CDP (doesn't close the browser)
+            await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
         log.info("Browser stopped")
@@ -522,6 +599,16 @@ async def main() -> None:
         help="Path to Chrome profile directory with Claude login (e.g. ~/Library/Application Support/Google/Chrome/Default)",
     )
     parser.add_argument(
+        "--connect-existing",
+        action="store_true",
+        help="Connect to existing Chrome instance via CDP (must start Chrome with --remote-debugging-port=9222)",
+    )
+    parser.add_argument(
+        "--cdp-url",
+        default="http://localhost:9222",
+        help="Chrome DevTools Protocol URL (default: http://localhost:9222)",
+    )
+    parser.add_argument(
         "--tunnel-to",
         default=None,
         help="Attacker VM address to create SSH tunnel (e.g. 4.154.171.119 or user@host)",
@@ -533,19 +620,41 @@ async def main() -> None:
     )
     args = parser.parse_args()
 
-    profile_info = f"Profile: {args.chrome_profile}" if args.chrome_profile else "[yellow]No profile - may need login[/]"
+    # Determine browser mode
+    if args.connect_existing:
+        browser_info = f"[green]CDP: {args.cdp_url}[/] (connect to existing Chrome)"
+    elif args.chrome_profile:
+        browser_info = f"Profile: {args.chrome_profile}"
+    else:
+        browser_info = "[yellow]Fresh browser - may need login[/]"
+
     tunnel_info = f"Tunnel: {args.tunnel_to}" if args.tunnel_to else "[dim]No tunnel (manual SSH required)[/]"
 
     console.print(
         Panel(
             "[bold]Local Browser Bridge[/]\n\n"
             f"WebSocket: ws://{args.host}:{args.port}\n"
-            f"{profile_info}\n"
+            f"Browser: {browser_info}\n"
             f"{tunnel_info}",
             title="Starting",
             border_style="blue",
         )
     )
+
+    if args.connect_existing:
+        console.print(
+            Panel(
+                "[bold yellow]Make sure a browser is running with remote debugging:[/]\n\n"
+                "[bold]Chrome:[/]\n"
+                "  /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome --remote-debugging-port=9222\n\n"
+                "[bold]Firefox:[/]\n"
+                "  /Applications/Firefox.app/Contents/MacOS/firefox --remote-debugging-port=9222\n\n"
+                "[dim]Quit all browser instances first, then start with the flag above.\n"
+                "Log into Claude in that browser window before running this script.[/]",
+                title="Browser Setup",
+                border_style="yellow",
+            )
+        )
 
     # Parse tunnel destination
     ssh_proc = None
@@ -566,7 +675,14 @@ async def main() -> None:
         if not ssh_proc:
             console.print("[red]Failed to establish SSH tunnel. Continuing without tunnel...[/]")
 
-    bridge = LocalBrowserBridge(headless=args.headless, chrome_profile=args.chrome_profile)
+    # Create bridge with appropriate mode
+    cdp_url = args.cdp_url if args.connect_existing else None
+    chrome_profile = None if args.connect_existing else args.chrome_profile
+    bridge = LocalBrowserBridge(
+        headless=args.headless,
+        chrome_profile=chrome_profile,
+        cdp_url=cdp_url,
+    )
     server = BridgeServer(bridge, host=args.host, port=args.port)
 
     # Handle shutdown gracefully

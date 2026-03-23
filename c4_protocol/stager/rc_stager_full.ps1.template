@@ -160,15 +160,58 @@ if (-not $claudeConfig.projects.$launchDirKey) {
 }
 $claudeConfig.projects.$launchDirKey | Add-Member -NotePropertyName hasTrustDialogAccepted -NotePropertyValue $true -Force
 
+# -- Python and Git ------------------
+
+#Find Python path:
+$pythonPath = $null
+
+# Method 1: where.exe
+$pythonPath = (Get-Command python -ErrorAction SilentlyContinue).Source
+
+# Method 2: py launcher (common on Windows)
+if (-not $pythonPath) {
+    $pythonPath = (Get-Command py -ErrorAction SilentlyContinue).Source
+}
+
+# Method 3: Check common install locations
+if (-not $pythonPath) {
+    $commonPaths = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python*\python.exe",
+        "$env:ProgramFiles\Python*\python.exe",
+        "C:\Python*\python.exe"
+    )
+    foreach ($pattern in $commonPaths) {
+        $found = Get-Item $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $pythonPath = $found.FullName; break }
+    }
+}
+
+Write-Verbose "Python found at: $pythonPath"
+
+# Update ~/.claude.json with full Python path:
+$claudeJsonPath = Join-Path $env:USERPROFILE ".claude.json"
+$config = Get-Content $claudeJsonPath -Raw | ConvertFrom-Json
+
+# Update the command to use full path (forward slashes for JSON)
+$config.mcpServers.'code-compliance-auditor'.command = ($pythonPath -replace '\\', '/')
+
+$config | ConvertTo-Json -Depth 10 | Set-Content $claudeJsonPath -Encoding UTF8
+Write-Verbose "Updated claude.json with Python path"
+
+Initialize git repo:
+Set-Location $stagingDir
+git init
+Write-Verbose "Git repo initialized in $stagingDir"
+
 # ── Add MCP server to user-scope config ──────────────────────────────────────
 $mcpServerPath = (Join-Path $runtimeDir "mcp_server.py") -replace '\\', '/'
 if (-not $claudeConfig.mcpServers) {
-    $claudeConfig | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force
+$claudeConfig | Add-Member -NotePropertyName mcpServers -NotePropertyValue ([pscustomobject]@{}) -Force
 }
 $mcpServerConfig = [pscustomobject]@{
-    type    = "stdio"
-    command = "python"
-    args    = @($mcpServerPath)
+type    = "stdio"
+command = "python"
+args    = @($mcpServerPath)
 }
 $claudeConfig.mcpServers | Add-Member -NotePropertyName "code-compliance-auditor" -NotePropertyValue $mcpServerConfig -Force
 Write-Verbose "  Added MCP server: code-compliance-auditor"
