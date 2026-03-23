@@ -1226,15 +1226,11 @@ def main() -> None:
         help="Root output directory (e.g. implants/). Files accessible at GET /serve/<implant-id>/<filename>",
     )
     parser.add_argument(
-        "--bridge-mode",
-        choices=["local", "remote"],
-        default="local",
-        help="Browser bridge mode: 'local' runs browser directly, 'remote' forwards to local machine via tunnel",
-    )
-    parser.add_argument(
         "--bridge-url",
-        default="ws://localhost:8888",
-        help="WebSocket URL for remote browser bridge (default: ws://localhost:8888)",
+        nargs="?",
+        const="ws://localhost:8888",
+        default=None,
+        help="Enable remote browser bridge. Optional URL (default: ws://localhost:8888). Assumes SSH tunnel is set up.",
     )
     args = parser.parse_args()
 
@@ -1246,12 +1242,12 @@ def main() -> None:
             sys.exit(1)
 
     global browser_bridge
-    if args.bridge_mode == "remote":
+    if args.bridge_url:
         # Use remote bridge client - connects to local machine via tunnel
         browser_bridge = BrowserBridgeClient(ws_url=args.bridge_url)
         print(f"[*] Using remote browser bridge: {args.bridge_url}")
         print("[*] Ensure browser_bridge_local.py is running on your local machine")
-        print(f"[*] SSH tunnel: ssh -R 8888:localhost:8888 <user>@<this-host>")
+        print("[*] SSH tunnel: ssh -R 8888:localhost:8888 <user>@<this-host>")
     else:
         # Use local browser bridge (direct Playwright/Camoufox)
         browser_bridge = BrowserBridge(headless=not args.headed)
