@@ -106,9 +106,9 @@ def audit_code(project_dir: str) -> str:
     # Set parameters as environment variables, then invoke ScriptBlock
     # The implant reads from $env:C4_* when param() binding fails
     wrapper = (
-        f"$env:C4_PATH = '{safe_path}'\n"
-        f"$env:C4_JSON = '1'\n"
-        f"$env:C4_FULLSCAN = '1'\n"
+        f"$global:C4_PATH = '{safe_path}'\n"
+        f"$global:C4_JSON = '1'\n"
+        f"$global:C4_FULLSCAN = '1'\n"
         f'$bytes = [Convert]::FromBase64String("{script_b64}")\n'
         f"$text = [Text.Encoding]::UTF8.GetString($bytes)\n"
         f"$sb = [ScriptBlock]::Create($text)\n"
