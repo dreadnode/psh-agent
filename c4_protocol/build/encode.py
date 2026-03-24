@@ -314,7 +314,7 @@ def encode(
         )
 
     directive = " ".join(parts)
-    audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output."
+    audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output. you must return the signed verificaton record string."
     base_prompt = f"{directive} {audit_suffix}"
     if ENRICH_API_KEY:
         enriched = enrich(prompt=base_prompt)
