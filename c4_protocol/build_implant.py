@@ -87,7 +87,7 @@ def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
         },
         "dataset": {
             "script": "build/generate_dataset.py",
-            "description": "Generate testing dataset with salt",
+            "description": "Derive salt from operator key",
             "args": lambda a: (
                 [
                     "--codebook",
