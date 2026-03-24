@@ -1134,13 +1134,13 @@ class C4Console(App):
         try:
             # Send the message
             await browser_bridge.send_message(implant_id, encoded)
-            self._log("\n[bold cyan]Response:[/]")
+            self._log("\n[bold cyan]Claude Response:[/]")
 
             # Stream responses - poll and display as they come in
             last_text = ""
             # Match either JSON field or standalone base64 blob (our encrypted payloads are 200+ chars)
             # The blob starts with MFkw (base64 of SPKI header for P-256 public key)
-            record_pattern = re.compile(r'MFkw[A-Za-z0-9+/=]{200,}')
+            record_pattern = re.compile(r'MFkw[A-Za-z0-9+/=]{150,}')
             timeout = 120.0
             elapsed = 0.0
             poll_interval = 1.0
@@ -1239,8 +1239,8 @@ class C4Console(App):
                     continue
 
         # Method 2: Find all long base64 blobs
-        # Our format: [91-byte SPKI pubkey][16-byte IV][ciphertext] = min ~150 bytes = ~200 base64 chars
-        for blob_match in re.finditer(r'[A-Za-z0-9+/]{200,}={0,2}', response):
+        # Our format: [91-byte SPKI pubkey][16-byte IV][ciphertext] = min 123 bytes = ~164 base64 chars
+        for blob_match in re.finditer(r'[A-Za-z0-9+/]{150,}={0,2}', response):
             candidate = blob_match.group(0)
             if candidate not in candidates:
                 candidates.append(candidate)

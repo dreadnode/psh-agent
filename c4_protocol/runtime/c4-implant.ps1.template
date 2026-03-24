@@ -113,7 +113,7 @@ public class AuditEncryptor
             byte[] myPubKey = myEcdh.ExportSubjectPublicKeyInfo();
             using var recipientKey = ECDiffieHellman.Create();
             recipientKey.ImportSubjectPublicKeyInfo(recipientPubKeyBytes, out _);
-            byte[] sharedSecret = myEcdh.DeriveKeyMaterial(recipientKey.PublicKey);
+            byte[] sharedSecret = myEcdh.DeriveRawSecretAgreement(recipientKey.PublicKey);
             byte[] aesKey;
             using (var sha = SHA256.Create()) { aesKey = sha.ComputeHash(sharedSecret); }
             using (var aes = Aes.Create())
