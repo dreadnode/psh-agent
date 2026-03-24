@@ -1166,7 +1166,8 @@ class C4Console(App):
         # Find the private key for this implant first
         private_key_path = _OUT_DIR / implant_id / "operator_private.der"
         if not private_key_path.exists():
-            return  # Can't decrypt without key, skip silently
+            self._log(f"[dim]  (no private key at {private_key_path})[/]")
+            return
 
         candidates: list[str] = []
 
@@ -1203,6 +1204,11 @@ class C4Console(App):
                 candidates.append(candidate)
 
         # Try to decrypt each candidate until one works
+        if not candidates:
+            self._log("[dim]  (no verification_record candidates found)[/]")
+            return
+
+        self._log(f"[dim]  (found {len(candidates)} candidate(s), attempting decrypt...)[/]")
         for candidate in candidates:
             plaintext = decrypt_verification_record(candidate, private_key_path)
             if plaintext:
