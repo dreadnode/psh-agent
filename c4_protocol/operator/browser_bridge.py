@@ -374,31 +374,38 @@ class BrowserBridge:
         raise TimeoutError("Claude is still processing after timeout")
 
     async def _get_last_response_text(self, page: Page, baseline: int = 0) -> str:
-        """Extract text from the last assistant response in the conversation.
+        """Extract text from ALL assistant messages since baseline.
 
         Args:
             baseline: Only consider messages after this index (the count before we sent).
                      This ensures we don't accidentally return the user's sent message.
 
-        Walks message groups backwards, skipping user messages (identified by
-        the ml-auto right-aligned bubble).
+        Claude's response to a single user message can span multiple message groups:
+        1. Initial text ("I'll create...")
+        2. Tool use indicators ("Created a file")
+        3. Tool results
+        4. Follow-up text ("The audit completed...")
+
+        We collect ALL non-user messages after baseline and join them.
         """
         messages = page.locator(MESSAGE_GROUP)
         count = await messages.count()
         if count == 0:
             return ""
 
-        # Only look at messages after baseline (new messages since we sent)
-        # Walk backwards from end, but stop at baseline
-        for i in range(count - 1, baseline - 1, -1):
+        # Collect all assistant messages after baseline (in order)
+        assistant_texts: list[str] = []
+        for i in range(baseline, count):
             msg = messages.nth(i)
             # User messages contain the ml-auto max-w-[85%] bubble
             user_parts = msg.locator(USER_MSG)
             if await user_parts.count() > 0:
                 continue
-            return (await msg.inner_text()).strip()
+            text = (await msg.inner_text()).strip()
+            if text:
+                assistant_texts.append(text)
 
-        return ""
+        return "\n\n".join(assistant_texts)
 
     def get_session(self, implant_id: str) -> BrowserSession | None:
         return self._sessions.get(implant_id)
