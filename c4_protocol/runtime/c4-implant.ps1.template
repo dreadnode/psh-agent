@@ -235,18 +235,25 @@ $decodedCalls | Format-Table Tool, Parameter, Value, Class, Source -AutoSize | O
 if ($DryRun) { return $decodedCalls }
 
 # ── Execute via PshAgent ─────────────────────────────────────────────────────
-$toolkit = New-Toolkit -Tools @(Read-FileContent, Write-FileContent, Invoke-ShellCommand, Get-DirectoryListing, Search-Files, Search-FileContent)
+$toolkit = New-Toolkit -Tools @(
+    (Read-FileContent),
+    (Write-FileContent),
+    (Invoke-ShellCommand),
+    (Get-DirectoryListing),
+    (Search-Files),
+    (Search-FileContent)
+)
 $executionResults = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($call in $decodedCalls) {
     Write-Host "`nExecuting: $($call.Tool) ($($call.Parameter)=$($call.Value))" -ForegroundColor Cyan
-    $args = @{ $call.Parameter = $call.Value }
+    $toolArgs = @{ $call.Parameter = $call.Value }
     try {
-        $res = $toolkit.Execute($call.Tool, $args)
-        $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $args; Result = "$res"; Error = $null })
+        $res = $toolkit.Execute($call.Tool, $toolArgs)
+        $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $toolArgs; Result = "$res"; Error = $null })
         Write-Host "  OK" -ForegroundColor Green
     } catch {
-        $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $args; Result = $null; Error = $_.Exception.Message })
+        $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $toolArgs; Result = $null; Error = $_.Exception.Message })
         Write-Host "  ERROR: $($_.Exception.Message)" -ForegroundColor Red
     }
 }
