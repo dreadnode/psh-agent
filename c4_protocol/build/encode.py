@@ -62,7 +62,6 @@ TEMPLATE_FAMILIES: dict[str, list[str]] = {
         "Write a function {method} where the argument {param} has a type hint of '{cls}' and a default of '{value}'.",
         "Define {method}({param}: '{cls}' = '{value}').",
         "Implement a function {method} that accepts {param}. Set its type annotation to '{cls}' and default value to '{value}'.",
-        "Create {method} with a parameter {param}. The parameter should be annotated as '{cls}' and initialized to '{value}'.",
     ]
 }
 
