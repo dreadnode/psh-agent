@@ -220,11 +220,8 @@ Automates the Claude Code web UI using Camoufox (anti-detect Firefox via Playwri
 
 ### Stager
 
-#### stager/rc_stager.py
-Launches a Claude Code remote-control session on the target and monitors stdout for the bridge URL. Once captured, beacons the URL to the C2 listener over TCP, then keeps the Claude process alive for the operator to connect.
-
-#### stager/c2_listener.py
-Minimal TCP server that listens for BRIDGE and SESSION beacons from stagers. Prints incoming session URLs with timestamps for operator discovery.
+#### stager/rc_stager_full.ps1.template
+Full-deploy stager template. At build time, the implant (with PshAgent and MCP server embedded) is baked into this template. When executed on the target, it stages all payloads to a temp directory, configures Claude Code's MCP settings, launches a remote-control session, and beacons the bridge URL back to the C2 server over TCP.
 
 ### Runtime
 
