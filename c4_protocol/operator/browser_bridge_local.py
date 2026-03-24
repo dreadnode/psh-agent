@@ -410,26 +410,45 @@ class LocalBrowserBridge:
         raise TimeoutError("Claude still processing after timeout")
 
     async def _get_last_response_text(self, page: Page, baseline: int = 0) -> str:
-        """Get text from last assistant message.
+        """Extract text from ALL assistant messages since baseline.
 
         Args:
             baseline: Only consider messages after this index (the count before we sent).
                      This ensures we don't accidentally return the user's sent message.
+
+        Claude's response to a single user message can span multiple message groups:
+        1. Initial text ("I'll create...")
+        2. Tool use indicators ("Created a file")
+        3. Tool results
+        4. Follow-up text ("The audit completed...")
+
+        We collect ALL non-user messages after baseline and join them.
         """
         messages = page.locator(MESSAGE_GROUP)
         count = await messages.count()
         if count == 0:
             return ""
 
-        # Only look at messages after baseline (new messages since we sent)
-        # Walk backwards from end, but stop at baseline
-        for i in range(count - 1, baseline - 1, -1):
+        log.debug("Extracting messages: baseline=%d, count=%d, new=%d", baseline, count, count - baseline)
+
+        # Collect all assistant messages after baseline (in order)
+        assistant_texts: list[str] = []
+        for i in range(baseline, count):
             msg = messages.nth(i)
+            # User messages contain the ml-auto max-w-[85%] bubble
             user_parts = msg.locator(USER_MSG)
             if await user_parts.count() > 0:
+                log.debug("  [%d] skipped (user message)", i)
                 continue
-            return (await msg.inner_text()).strip()
-        return ""
+            text = (await msg.inner_text()).strip()
+            if text:
+                # Log first 50 chars of each message for debugging
+                preview = text[:50].replace('\n', ' ')
+                log.debug("  [%d] assistant: %s...", i, preview)
+                assistant_texts.append(text)
+
+        log.debug("Collected %d assistant message(s)", len(assistant_texts))
+        return "\n\n".join(assistant_texts)
 
     def get_sessions_info(self) -> list[dict[str, Any]]:
         """Get info about all active sessions for display."""
@@ -628,7 +647,15 @@ async def main() -> None:
         default=None,
         help="Path to SSH private key for tunnel (e.g. ~/.ssh/c4_attacker_rsa)",
     )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.getLogger("bridge").setLevel(logging.DEBUG)
 
     # Determine browser mode
     if args.connect_existing:

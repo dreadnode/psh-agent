@@ -393,6 +393,8 @@ class BrowserBridge:
         if count == 0:
             return ""
 
+        log.debug("Extracting messages: baseline=%d, count=%d, new=%d", baseline, count, count - baseline)
+
         # Collect all assistant messages after baseline (in order)
         assistant_texts: list[str] = []
         for i in range(baseline, count):
@@ -400,11 +402,16 @@ class BrowserBridge:
             # User messages contain the ml-auto max-w-[85%] bubble
             user_parts = msg.locator(USER_MSG)
             if await user_parts.count() > 0:
+                log.debug("  [%d] skipped (user message)", i)
                 continue
             text = (await msg.inner_text()).strip()
             if text:
+                # Log first 50 chars of each message for debugging
+                preview = text[:50].replace('\n', ' ')
+                log.debug("  [%d] assistant: %s...", i, preview)
                 assistant_texts.append(text)
 
+        log.debug("Collected %d assistant message(s)", len(assistant_texts))
         return "\n\n".join(assistant_texts)
 
     def get_session(self, implant_id: str) -> BrowserSession | None:
