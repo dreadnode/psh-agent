@@ -304,7 +304,13 @@ class LocalBrowserBridge:
             return {"status": "error", "error": str(e)}
 
     async def wait_response(self, implant_id: str, timeout: float = 120.0) -> dict[str, Any]:
-        """Wait for Claude's response and return the text."""
+        """Wait for Claude's response and return the text.
+
+        Simple approach: poll for messages, return as soon as we see the
+        verification_record (the encrypted result). No complex completion detection.
+        """
+        import re
+
         session = self._sessions.get(implant_id)
         if not session or not session.page:
             return {"status": "error", "error": f"no session for {implant_id[:12]}"}
@@ -315,6 +321,9 @@ class LocalBrowserBridge:
 
         log.info("[yellow]Waiting for response from %s...[/]", implant_id[:12], extra={"markup": True})
 
+        # Regex to find verification_record with base64 content
+        record_pattern = re.compile(r'verification_record["\s:]+([A-Za-z0-9+/=]{50,})')
+
         try:
             # Wait for processing to start
             try:
@@ -324,53 +333,38 @@ class LocalBrowserBridge:
             except PlaywrightTimeout:
                 pass  # May have already started/finished
 
-            # Poll for completion
-            last_text = ""
-            stable_count = 0
             elapsed = 0.0
             poll_interval = 1.0
-
-            # Use baseline to only look at messages after we sent
             baseline = session._msg_count_at_send
 
             while elapsed < timeout:
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
 
-                is_processing = await self._is_processing(page)
                 current_text = await self._get_last_response_text(page, baseline=baseline)
 
-                if current_text == last_text and current_text:
-                    stable_count += 1
-                else:
-                    stable_count = 0
-                    last_text = current_text
-
-                if not is_processing and stable_count >= 2:
+                # Check if we found the verification_record - that's our signal
+                if record_pattern.search(current_text):
+                    # Give it one more poll to make sure we got everything
+                    await asyncio.sleep(0.5)
+                    final_text = await self._get_last_response_text(page, baseline=baseline)
                     session.status = "ready"
                     session.last_activity = datetime.now()
                     log.info(
-                        "[green]Response received from %s[/] (%d chars)",
+                        "[green]Found verification_record from %s[/] (%d chars)",
                         implant_id[:12],
-                        len(last_text),
+                        len(final_text),
                         extra={"markup": True},
                     )
-                    return {"status": "ok", "data": last_text}
+                    return {"status": "ok", "data": final_text}
 
-                if stable_count >= 5:
-                    session.status = "ready"
-                    session.last_activity = datetime.now()
-                    log.info(
-                        "[yellow]Response stable (fallback) from %s[/] (%d chars)",
-                        implant_id[:12],
-                        len(last_text),
-                        extra={"markup": True},
-                    )
-                    return {"status": "ok", "data": last_text}
+                log.debug("  elapsed=%.0fs, chars=%d, waiting for verification_record...", elapsed, len(current_text))
 
+            # Timeout - return whatever we have
             session.status = "timeout"
-            log.warning("[red]Response timeout from %s[/]", implant_id[:12], extra={"markup": True})
-            return {"status": "ok", "data": last_text}  # Return partial
+            final_text = await self._get_last_response_text(page, baseline=baseline)
+            log.warning("[red]Response timeout from %s[/] (%d chars)", implant_id[:12], len(final_text), extra={"markup": True})
+            return {"status": "ok", "data": final_text}
 
         except Exception as e:
             session.status = "error"
