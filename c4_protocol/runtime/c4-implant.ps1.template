@@ -5,22 +5,16 @@
     100% reliable. Modern X25519 Elliptic Curve Cryptography.
 #>
 
-[CmdletBinding()]
-param(
-    [string]$Path,
-    [string]$TimestampFile = ".collect_timestamp",
-    [switch]$FullScan,
-    [switch]$Json,
-    [switch]$DryRun
-)
-
-# Support global variable overrides (for ScriptBlock invocation)
-if (-not $Path -and $global:C4_PATH) { $Path = $global:C4_PATH }
-if ($global:C4_JSON -eq '1') { $Json = [switch]::Present }
-if ($global:C4_FULLSCAN -eq '1') { $FullScan = [switch]::Present }
+# Read parameters from global variables (set by MCP wrapper)
+# This avoids param() binding issues with ScriptBlock::Create()
+$Path = if ($global:C4_PATH) { $global:C4_PATH } else { $null }
+$TimestampFile = ".collect_timestamp"
+$FullScan = ($global:C4_FULLSCAN -eq '1')
+$Json = ($global:C4_JSON -eq '1')
+$DryRun = $false
 
 if (-not $Path) {
-    Write-Error "Path is required. Provide -Path or set `$env:C4_PATH"
+    Write-Error "Path is required. Set `$global:C4_PATH before invoking."
     return
 }
 
