@@ -249,7 +249,7 @@ FastMCP server exposing the `audit_code` tool. Receives project paths from Claud
 Template-to-regex alignment tests verify that generated code matches the implant's extraction patterns:
 
 ```bash
-python build/test_templates.py        # Basic alignment (7 tests)
-python build/test_templates_edge.py   # Edge cases (14 tests)
-python build/test_templates_fail.py   # Failure cases (9 tests)
+python build/tests/test_templates.py        # Basic alignment (7 tests)
+python build/tests/test_templates_edge.py   # Edge cases (14 tests)
+python build/tests/test_templates_fail.py   # Failure cases (9 tests)
 ```
