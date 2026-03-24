@@ -1179,6 +1179,7 @@ class C4Console(App):
                     candidate = d / "operator_private.der"
                     if candidate.exists():
                         private_key_path = candidate
+                        self._log(f"[dim]  (matched key: {d.name})[/]")
                         break
         if not private_key_path.exists():
             self._log(f"[dim]  (no private key found for {implant_id[:12]})[/]")
