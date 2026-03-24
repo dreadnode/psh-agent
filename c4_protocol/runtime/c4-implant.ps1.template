@@ -189,9 +189,9 @@ foreach ($file in $files) {
         foreach ($p in $patterns) {
             $matches = [regex]::Matches($content, $p)
             foreach ($m in $matches) {
-                if ($p -like "*:\s*[''"](\w+)[''"]*") {
+                if ($p -match ':\s*[''"](\w+)[''"]') {
                     $results.Add([PSCustomObject]@{ ClassName = $m.Groups[3].Value; MethodName = $m.Groups[1].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
-                } elseif ($p -like "*=\s*[''"]([^''"]*)[''"][\s\S]*?def*") {
+                } elseif ($p -match '=\s*[''"]([^''"]*)[''"][\s\S]*?def') {
                     $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[4].Value; DefaultValue = $m.Groups[3].Value; Source = $file.Name })
                 } elseif ($p -match '\{') {
                     $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[3].Value; Source = $file.Name })
