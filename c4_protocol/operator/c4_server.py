@@ -1163,10 +1163,18 @@ class C4Console(App):
 
     def _try_decrypt_response(self, implant_id: str, response: str) -> None:
         """Attempt to extract and decrypt verification_record from response."""
-        # Find the private key for this implant first
+        # Find the private key for this implant
         private_key_path = _OUT_DIR / implant_id / "operator_private.der"
         if not private_key_path.exists():
-            self._log(f"[dim]  (no private key at {private_key_path})[/]")
+            # Try prefix match - implant_id might be truncated or directory named differently
+            for d in _OUT_DIR.iterdir():
+                if d.is_dir() and (implant_id.startswith(d.name) or d.name.startswith(implant_id)):
+                    candidate = d / "operator_private.der"
+                    if candidate.exists():
+                        private_key_path = candidate
+                        break
+        if not private_key_path.exists():
+            self._log(f"[dim]  (no private key found for {implant_id[:12]})[/]")
             return
 
         candidates: list[str] = []
