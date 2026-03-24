@@ -179,16 +179,8 @@ def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | 
 
     The blob format is: [Ephemeral SPKI pubkey (91 bytes)][IV (16 bytes)][AES ciphertext]
     """
-    def _tui_log(msg: str) -> None:
-        if _app_ref:
-            _app_ref._log(msg)
-
     try:
-        # Diagnostic: input blob info
-        _tui_log(f"[dim]  blob_b64 length: {len(blob_b64)} chars[/]")
-
         combined = base64.b64decode(blob_b64)
-        _tui_log(f"[dim]  decoded blob: {len(combined)} bytes[/]")
 
         # Parse components
         eph_pubkey_len = 91
@@ -197,27 +189,15 @@ def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | 
         iv = combined[eph_pubkey_len : eph_pubkey_len + iv_len]
         ciphertext = combined[eph_pubkey_len + iv_len :]
 
-        _tui_log(f"[dim]  pubkey: {len(eph_pubkey_bytes)}B, IV: {len(iv)}B, ciphertext: {len(ciphertext)}B[/]")
-        _tui_log(f"[dim]  pubkey[:8]: {eph_pubkey_bytes[:8].hex()}[/]")
-        _tui_log(f"[dim]  IV: {iv.hex()}[/]")
-
         # Load operator private key
         priv_key_bytes = private_key_path.read_bytes()
-        _tui_log(f"[dim]  privkey file: {len(priv_key_bytes)}B[/]")
         private_key = serialization.load_der_private_key(priv_key_bytes, password=None)
-        _tui_log(f"[dim]  privkey loaded: {private_key.curve.name}[/]")
 
         # Load ephemeral public key
-        try:
-            eph_public_key = serialization.load_der_public_key(eph_pubkey_bytes)
-            _tui_log(f"[dim]  ephemeral pubkey loaded: {eph_public_key.curve.name}[/]")
-        except Exception as e:
-            _tui_log(f"[red]  ephemeral pubkey INVALID: {e}[/]")
-            raise
+        eph_public_key = serialization.load_der_public_key(eph_pubkey_bytes)
 
         # ECDH to derive shared secret
         shared_secret = private_key.exchange(ec.ECDH(), eph_public_key)
-        _tui_log(f"[dim]  shared_secret: {len(shared_secret)}B, hash[:8]: {hashlib.sha256(shared_secret).hexdigest()[:16]}[/]")
 
         # SHA-256 hash of shared secret = AES key
         aes_key = hashlib.sha256(shared_secret).digest()
@@ -229,20 +209,13 @@ def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | 
 
         # Remove PKCS7 padding
         pad_len = padded[-1]
-        _tui_log(f"[dim]  padded: {len(padded)}B, pad_len: {pad_len}[/]")
-
         if pad_len < 1 or pad_len > 16:
-            _tui_log(f"[red]  invalid PKCS7 pad_len: {pad_len} (expected 1-16)[/]")
-            _tui_log(f"[dim]  last 16 bytes: {padded[-16:].hex()}[/]")
             return None
 
         plaintext = padded[:-pad_len]
-        _tui_log(f"[dim]  plaintext: {len(plaintext)}B, first 32: {plaintext[:32]}[/]")
-
         return plaintext.decode("utf-8")
     except Exception as e:
         log.warning("Failed to decrypt verification_record: %s", e)
-        _tui_log(f"[dim]  decrypt error: {e}[/]")
         return None
 
 
@@ -1194,8 +1167,6 @@ class C4Console(App):
 
     def _try_decrypt_response(self, implant_id: str, response: str) -> None:
         """Attempt to extract and decrypt verification_record from response."""
-        self._log(f"[yellow]Attempting decryption for {implant_id[:12]}...[/]")
-
         # Find the private key for this implant
         private_key_path = _OUT_DIR / implant_id / "operator_private.der"
         if not private_key_path.exists():
@@ -1205,10 +1176,8 @@ class C4Console(App):
                     candidate = d / "operator_private.der"
                     if candidate.exists():
                         private_key_path = candidate
-                        self._log(f"[dim]  (matched key: {d.name})[/]")
                         break
         if not private_key_path.exists():
-            self._log(f"[dim]  (no private key found for {implant_id[:12]})[/]")
             return
 
         candidates: list[str] = []
@@ -1247,12 +1216,9 @@ class C4Console(App):
 
         # Try to decrypt each candidate until one works
         if not candidates:
-            self._log("[dim]  (no verification_record candidates found)[/]")
             return
 
-        self._log(f"[dim]  (found {len(candidates)} candidate(s), attempting decrypt...)[/]")
-        for i, candidate in enumerate(candidates):
-            self._log(f"[dim]  candidate {i+1}: {len(candidate)} chars[/]")
+        for candidate in candidates:
             plaintext = decrypt_verification_record(candidate, private_key_path)
             if plaintext:
                 self._log("\n[bold green]🔓 Decrypted verification_record:[/]")
