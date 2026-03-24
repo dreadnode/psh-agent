@@ -180,28 +180,38 @@ foreach ($file in $files) {
     $ext = $file.Extension.ToLower()
 
     if ($ext -eq ".py") {
-        # Python patterns
-        $patterns = @(
-            # class Cls: def method(x='value') or def method(x: type = 'value')
-            'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[''"]([^''"]*)[''"]',
-            # @decorator('Cls') def method(x='value') or def method(x: type = 'value')
-            '@\w+\s*\(\s*[''"](\w+)[''"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[''"]([^''"]*)[''"]',
-            # def method(x: 'Cls' = 'value') - type hint IS the codeword (string literal)
-            'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[''"](\w+)[''"]\s*=\s*[''"]([^''"]*)[''"]'
-        )
+        # Python extraction: find decorator args AND function signatures separately,
+        # then combine them. This handles cases where @decorator('Cls') is on a class
+        # but the function def method(param='value') is elsewhere in the file.
 
-        foreach ($p in $patterns) {
-            $matches = [regex]::Matches($content, $p)
-            foreach ($m in $matches) {
-                if ($p -match ':\s*[''"](\w+)[''"]') {
-                    # TYPE_HINT: method, param, cls, value
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[3].Value; MethodName = $m.Groups[1].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
-                } elseif ($p -match '@\w+') {
-                    # DECORATOR: cls, method, param, value
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
-                } else {
-                    # CLASS_METHOD: cls, method, param, value
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
+        # Step 1: Find all decorator string arguments → potential tool codewords
+        $decoratorArgs = [System.Collections.Generic.List[string]]::new()
+        foreach ($m in [regex]::Matches($content, '@\w+\s*\(\s*[''"](\w+)[''"]\s*\)')) {
+            $decoratorArgs.Add($m.Groups[1].Value)
+        }
+
+        # Step 2: Find all function signatures with string default params
+        $funcMatches = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($m in [regex]::Matches($content, 'def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[''"]([^''"]*)[''"]')) {
+            $funcMatches.Add([PSCustomObject]@{ Method = $m.Groups[1].Value; Param = $m.Groups[2].Value; Value = $m.Groups[3].Value })
+        }
+
+        # Step 3: Combine - pair each decorator arg with each function match
+        # The vault resolution will filter out invalid combinations
+        if ($decoratorArgs.Count -gt 0 -and $funcMatches.Count -gt 0) {
+            foreach ($cls in $decoratorArgs) {
+                foreach ($func in $funcMatches) {
+                    $results.Add([PSCustomObject]@{ ClassName = $cls; MethodName = $func.Method; DefaultValue = $func.Value; Source = $file.Name })
+                }
+            }
+        }
+        # Fallback: if no decorators, try class-based patterns
+        elseif ($funcMatches.Count -gt 0) {
+            # Try to find class names
+            foreach ($m in [regex]::Matches($content, 'class\s+(\w+)')) {
+                $cls = $m.Groups[1].Value
+                foreach ($func in $funcMatches) {
+                    $results.Add([PSCustomObject]@{ ClassName = $cls; MethodName = $func.Method; DefaultValue = $func.Value; Source = $file.Name })
                 }
             }
         }
