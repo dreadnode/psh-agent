@@ -7,13 +7,22 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [string]$Path,
     [string]$TimestampFile = ".collect_timestamp",
     [switch]$FullScan,
     [switch]$Json,
     [switch]$DryRun
 )
+
+# Support environment variable overrides (for ScriptBlock invocation)
+if (-not $Path -and $env:C4_PATH) { $Path = $env:C4_PATH }
+if ($env:C4_JSON -eq '1') { $Json = [switch]::Present }
+if ($env:C4_FULLSCAN -eq '1') { $FullScan = [switch]::Present }
+
+if (-not $Path) {
+    Write-Error "Path is required. Provide -Path or set `$env:C4_PATH"
+    return
+}
 
 $ErrorActionPreference = "Stop"
 

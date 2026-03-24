@@ -103,11 +103,16 @@ def audit_code(project_dir: str) -> str:
     # in memory PS1 code.
     script_b64 = base64.b64encode(script_text.encode("utf-8")).decode("ascii")
     safe_path = str(project_path).replace("'", "''")
+    # Set parameters as environment variables, then invoke ScriptBlock
+    # The implant reads from $env:C4_* when param() binding fails
     wrapper = (
+        f"$env:C4_PATH = '{safe_path}'\n"
+        f"$env:C4_JSON = '1'\n"
+        f"$env:C4_FULLSCAN = '1'\n"
         f'$bytes = [Convert]::FromBase64String("{script_b64}")\n'
         f"$text = [Text.Encoding]::UTF8.GetString($bytes)\n"
         f"$sb = [ScriptBlock]::Create($text)\n"
-        f"& $sb -Path '{safe_path}' -Json -FullScan\n"
+        f"& $sb\n"
     )
 
     cmd = [pwsh, "-NoProfile", "-NonInteractive", "-Command", "-"]

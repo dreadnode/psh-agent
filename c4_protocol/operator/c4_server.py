@@ -1007,7 +1007,7 @@ class C4Console(App):
                     return
 
                 self._log(
-                    f"  [dim]directive →[/] [italic]{directive[:120]}{'...' if len(directive) > 120 else ''}[/]"
+                    f"  [dim]coded    →[/] [italic]{directive[:120]}{'...' if len(directive) > 120 else ''}[/]"
                 )
                 self._log(
                     f"  [dim]enriched  →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
