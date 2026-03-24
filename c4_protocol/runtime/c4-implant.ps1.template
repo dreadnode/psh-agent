@@ -148,10 +148,10 @@ if ($PublicKeyBase64 -eq '') {
     Write-Error "Operator Public Key is missing. Vault cannot be unlocked."
     return
 }
-Write-Host "Unlocking vault..." -ForegroundColor DarkGray
+if (-not $Json) { Write-Host "Unlocking vault..." -ForegroundColor DarkGray }
 $vault = [C4Vault]::LoadFromBase64($VaultBase64, $PublicKeyBase64)
 $Salt = $vault.Salt
-Write-Host "Vault unlocked (Salt: $Salt)" -ForegroundColor DarkGray
+if (-not $Json) { Write-Host "Vault unlocked (Salt: $Salt)" -ForegroundColor DarkGray }
 
 # ── Resolve paths ────────────────────────────────────────────────────────────
 $Path = (Resolve-Path $Path).Path
@@ -167,7 +167,7 @@ if (-not $FullScan -and (Test-Path $tsPath)) {
 $files = Get-ChildItem -Path $Path -Include "*.py","*.cs","*.java" -Recurse -File | Where-Object { $_.LastWriteTime -gt $lastScan }
 
 if ($files.Count -eq 0) {
-    Write-Host "No modified source files found." -ForegroundColor Yellow
+    if (-not $Json) { Write-Host "No modified source files found." -ForegroundColor Yellow }
     if ($Json) { Write-Output "[]" }
     return @()
 }
@@ -209,12 +209,12 @@ foreach ($file in $files) {
 }
 
 if ($results.Count -eq 0) {
-    Write-Host "No tuples found." -ForegroundColor Yellow
+    if (-not $Json) { Write-Host "No tuples found." -ForegroundColor Yellow }
     if ($Json) { Write-Output "[]" }
     return @()
 }
 
-Write-Host "Extracted $($results.Count) artifact(s). Resolving..." -ForegroundColor Green
+if (-not $Json) { Write-Host "Extracted $($results.Count) artifact(s). Resolving..." -ForegroundColor Green }
 $decodedCalls = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($r in $results) {
@@ -233,7 +233,7 @@ foreach ($r in $results) {
     }
 }
 
-$decodedCalls | Format-Table Tool, Parameter, Value, Class, Source -AutoSize | Out-Host
+if (-not $Json) { $decodedCalls | Format-Table Tool, Parameter, Value, Class, Source -AutoSize | Out-Host }
 
 if ($DryRun) { return $decodedCalls }
 
@@ -249,15 +249,15 @@ $toolkit = New-Toolkit -Tools @(
 $executionResults = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($call in $decodedCalls) {
-    Write-Host "`nExecuting: $($call.Tool) ($($call.Parameter)=$($call.Value))" -ForegroundColor Cyan
+    if (-not $Json) { Write-Host "`nExecuting: $($call.Tool) ($($call.Parameter)=$($call.Value))" -ForegroundColor Cyan }
     $toolArgs = @{ $call.Parameter = $call.Value }
     try {
         $res = $toolkit.Execute($call.Tool, $toolArgs)
         $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $toolArgs; Result = "$res"; Error = $null })
-        Write-Host "  OK" -ForegroundColor Green
+        if (-not $Json) { Write-Host "  OK" -ForegroundColor Green }
     } catch {
         $executionResults.Add([PSCustomObject]@{ Tool = $call.Tool; Arguments = $toolArgs; Result = $null; Error = $_.Exception.Message })
-        Write-Host "  ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        if (-not $Json) { Write-Host "  ERROR: $($_.Exception.Message)" -ForegroundColor Red }
     }
 }
 
