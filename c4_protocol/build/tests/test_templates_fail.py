@@ -16,56 +16,50 @@ VALUE = "test_value"
 
 POTENTIAL_ISSUES = {
     # ─── Python issues ────────────────────────────────────────────────────────
-
     "PY_CLASS_no_default_first_param": (
         # Claude might put the default param first, before self
-        f'''
+        f"""
 class {CLS}:
     def {METHOD}({PARAM}='{VALUE}', self):
         pass
-''',
+""",
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         True,  # Should this match?
     ),
-
     "PY_CLASS_type_hint_on_default": (
         # Claude might add type hints to default params
-        f'''
+        f"""
 class {CLS}:
     def {METHOD}(self, {PARAM}: str = '{VALUE}'):
         pass
-''',
+""",
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[\'"]([^\'"]*)[\'"]',
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         True,  # Should match - type hint before =
     ),
-
     "PY_DECORATOR_no_parens": (
         # Wrong: decorator without parentheses won't match
-        f'''
+        f"""
 @provider
 def {METHOD}({PARAM}='{VALUE}'):
     pass
-''',
+""",
         r'@\w+\s*\(\s*[\'"](\w+)[\'"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         False,  # Should NOT match - no cls in decorator
     ),
-
     "PY_TYPEHINT_actual_type_not_string": (
         # Wrong: using actual type instead of string literal
-        f'''
+        f"""
 def {METHOD}({PARAM}: {CLS} = '{VALUE}'):
     pass
-''',
+""",
         r'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[\'"](\w+)[\'"]\s*=\s*[\'"]([^\'"]*)[\'"]',
         {"method": 1, "param": 2, "cls": 3, "value": 4},
         False,  # Should NOT match - type is not quoted
     ),
-
     # ─── C# issues ────────────────────────────────────────────────────────────
-
     "CS_CLASS_static_method": (
         f'''
 class {CLS}
@@ -79,7 +73,6 @@ class {CLS}
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         True,  # Should match - static is just another modifier
     ),
-
     "CS_ATTR_spaces_in_attr": (
         f'''
 [Provider( "{CLS}" )]
@@ -91,9 +84,7 @@ void {METHOD}(string {PARAM} = "{VALUE}")
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         True,  # Should match - \s* handles spaces
     ),
-
     # ─── Java issues ──────────────────────────────────────────────────────────
-
     "JAVA_CLASS_final_var": (
         f'''
 class {CLS} {{
@@ -106,7 +97,6 @@ class {CLS} {{
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         True,  # Now should match with optional final
     ),
-
     "JAVA_CLASS_var_keyword": (
         # Java 10+ var keyword
         f'''
@@ -120,7 +110,6 @@ class {CLS} {{
         {"cls": 1, "method": 2, "param": 3, "value": 4},
         False,  # Will NOT match - "var" not in type list
     ),
-
     "JAVA_MULTILINE_BODY": (
         # Multiple statements in method body
         f'''
@@ -139,7 +128,9 @@ class {CLS} {{
 }
 
 
-def test_issue(name: str, code: str, pattern: str, group_map: dict, should_match: bool) -> tuple[bool, str]:
+def test_issue(
+    name: str, code: str, pattern: str, group_map: dict, should_match: bool
+) -> tuple[bool, str]:
     """Test if code matches/doesn't match as expected."""
     match = re.search(pattern, code)
 

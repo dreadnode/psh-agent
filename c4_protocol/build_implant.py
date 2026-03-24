@@ -269,7 +269,9 @@ def main() -> None:
         help="Random seed (default: random per instance)",
     )
     parser.add_argument(
-        "--public-key", default=None, help="Path to P-256 public key file (DER/SPKI format)"
+        "--public-key",
+        default=None,
+        help="Path to P-256 public key file (DER/SPKI format)",
     )
     parser.add_argument(
         "--pshagent-dir",

@@ -28,9 +28,8 @@ class {CLS}:
         return None
 ''',
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "PY_CLASS_double_quotes": (
         f'''
 class {CLS}:
@@ -38,43 +37,39 @@ class {CLS}:
         pass
 ''',
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "PY_CLASS_multiple_params": (
-        f'''
+        f"""
 class {CLS}:
     def {METHOD}(self, other_param, {PARAM}='{VALUE}', another=None):
         pass
-''',
+""",
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # ─── Python DECORATOR variations ──────────────────────────────────────────
     "PY_DECORATOR_with_imports": (
-        f'''
+        f"""
 from decorators import provider
 
 @provider('{CLS}')
 def {METHOD}({PARAM}='{VALUE}'):
     pass
-''',
+""",
         r'@\w+\s*\(\s*[\'"](\w+)[\'"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "PY_DECORATOR_newline_before_def": (
-        f'''
+        f"""
 @provider('{CLS}')
 
 def {METHOD}({PARAM}='{VALUE}'):
     pass
-''',
+""",
         r'@\w+\s*\(\s*[\'"](\w+)[\'"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "PY_DECORATOR_double_quotes": (
         f'''
 @provider("{CLS}")
@@ -82,28 +77,25 @@ def {METHOD}({PARAM}="{VALUE}"):
     pass
 ''',
         r'@\w+\s*\(\s*[\'"](\w+)[\'"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # ─── Python TYPE_HINT variations ──────────────────────────────────────────
     "PY_TYPEHINT_with_return": (
-        f'''
+        f"""
 def {METHOD}({PARAM}: '{CLS}' = '{VALUE}') -> None:
     pass
-''',
+""",
         r'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[\'"](\w+)[\'"]\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"method": 1, "param": 2, "cls": 3, "value": 4}
+        {"method": 1, "param": 2, "cls": 3, "value": 4},
     ),
-
     "PY_TYPEHINT_double_quotes": (
         f'''
 def {METHOD}({PARAM}: "{CLS}" = "{VALUE}"):
     pass
 ''',
         r'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[\'"](\w+)[\'"]\s*=\s*[\'"]([^\'"]*)[\'"]',
-        {"method": 1, "param": 2, "cls": 3, "value": 4}
+        {"method": 1, "param": 2, "cls": 3, "value": 4},
     ),
-
     # ─── C# CLASS variations ──────────────────────────────────────────────────
     "CS_CLASS_with_namespace": (
         f'''
@@ -119,9 +111,8 @@ namespace MyApp
 }}
 ''',
         r'class\s+(\w+)[\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "CS_CLASS_private_method": (
         f'''
 class {CLS}
@@ -132,9 +123,8 @@ class {CLS}
 }}
 ''',
         r'class\s+(\w+)[\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # ─── C# ATTRIBUTE variations ──────────────────────────────────────────────
     "CS_ATTR_multiple_attrs": (
         f'''
@@ -145,9 +135,8 @@ public void {METHOD}(string {PARAM} = "{VALUE}")
 }}
 ''',
         r'\[\w+\s*\(\s*"(\w+)"\s*\)\][\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # ─── Java CLASS variations ────────────────────────────────────────────────
     "JAVA_CLASS_public": (
         f'''
@@ -159,9 +148,8 @@ public class {CLS} {{
 }}
 ''',
         r'class\s+(\w+)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     "JAVA_CLASS_with_package": (
         f'''
 package com.example;
@@ -173,9 +161,8 @@ public class {CLS} {{
 }}
 ''',
         r'class\s+(\w+)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # ─── Java ANNOTATION variations ───────────────────────────────────────────
     "JAVA_ANNOT_with_class": (
         f'''
@@ -187,16 +174,18 @@ public class MyService {{
 }}
 ''',
         r'@\w+\s*\(\s*"(\w+)"\s*\)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
 }
 
 
-def test_edge_case(name: str, code: str, pattern: str, group_map: dict) -> tuple[bool, str]:
+def test_edge_case(
+    name: str, code: str, pattern: str, group_map: dict
+) -> tuple[bool, str]:
     """Test if code matches the regex and extracts correct values."""
     match = re.search(pattern, code)
     if not match:
-        return False, f"Pattern did not match"
+        return False, "Pattern did not match"
 
     errors = []
     expected = {"cls": CLS, "method": METHOD, "param": PARAM, "value": VALUE}
@@ -217,7 +206,6 @@ def main():
     print("=" * 70)
 
     all_passed = True
-    by_language = {"PY": [], "CS": [], "JAVA": []}
 
     for name, (code, pattern, group_map) in EDGE_CASES.items():
         passed, msg = test_edge_case(name, code, pattern, group_map)

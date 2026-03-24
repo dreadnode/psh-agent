@@ -24,7 +24,7 @@ import yaml
 
 ENRICH_ENABLED = bool(os.environ.get("GROQ_API_KEY"))
 
-ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
+ENRICH_MODEL = "groq/llama-3.3-70b-versatile"
 
 # Template families group directives by the code structure they instruct the LLM to generate.
 # This makes fingerprinting the protocol much harder as the embedding syntax varies.
@@ -104,44 +104,44 @@ TEMPLATE_FAMILIES: dict[str, list[str]] = {
     # ─── C# Templates ─────────────────────────────────────────────────────────
     "CSHARP_CLASS": [
         # class Cls { void Method(string x = "value") }
-        "Create a C# class {cls} with method void {method}(string {param} = \"{value}\").",
-        "Write a C# class named {cls} containing void {method}(string {param} = \"{value}\").",
-        "Define class {cls} in C# with a method {method}(string {param} = \"{value}\").",
-        "Implement a C# class {cls} with void {method}(string {param} = \"{value}\").",
-        "Create {cls}.cs with class {cls} containing void {method}(string {param} = \"{value}\").",
-        "Write C# class {cls} with method void {method}(string {param} = \"{value}\").",
-        "In C#, create class {cls} with void {method}(string {param} = \"{value}\").",
-        "Add a C# class {cls} that has void {method}(string {param} = \"{value}\").",
+        'Create a C# class {cls} with method void {method}(string {param} = "{value}").',
+        'Write a C# class named {cls} containing void {method}(string {param} = "{value}").',
+        'Define class {cls} in C# with a method {method}(string {param} = "{value}").',
+        'Implement a C# class {cls} with void {method}(string {param} = "{value}").',
+        'Create {cls}.cs with class {cls} containing void {method}(string {param} = "{value}").',
+        'Write C# class {cls} with method void {method}(string {param} = "{value}").',
+        'In C#, create class {cls} with void {method}(string {param} = "{value}").',
+        'Add a C# class {cls} that has void {method}(string {param} = "{value}").',
     ],
     "CSHARP_ATTRIBUTE": [
         # [Attribute("Cls")] void Method(string x = "value")
-        "Write a C# method {method}(string {param} = \"{value}\") with [Provider(\"{cls}\")] attribute.",
-        "Create a C# method {method}(string {param} = \"{value}\") decorated with [Registry(\"{cls}\")].",
-        "Define C# method {method}(string {param} = \"{value}\") with [Handler(\"{cls}\")] attribute.",
-        "Implement C# method void {method}(string {param} = \"{value}\") with [Component(\"{cls}\")].",
-        "Add [Service(\"{cls}\")] to a C# method void {method}(string {param} = \"{value}\").",
-        "Write C# method {method}(string {param} = \"{value}\") with [Binding(\"{cls}\")] attribute.",
+        'Write a C# method {method}(string {param} = "{value}") with [Provider("{cls}")] attribute.',
+        'Create a C# method {method}(string {param} = "{value}") decorated with [Registry("{cls}")].',
+        'Define C# method {method}(string {param} = "{value}") with [Handler("{cls}")] attribute.',
+        'Implement C# method void {method}(string {param} = "{value}") with [Component("{cls}")].',
+        'Add [Service("{cls}")] to a C# method void {method}(string {param} = "{value}").',
+        'Write C# method {method}(string {param} = "{value}") with [Binding("{cls}")] attribute.',
     ],
     # ─── Java Templates ───────────────────────────────────────────────────────
     "JAVA_CLASS": [
         # class Cls { void method() { String x = "value"; } }
-        "Create a Java class {cls} with method void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Write Java class {cls} containing void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Define class {cls} in Java with void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Implement Java class {cls} with method void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Create {cls}.java with class {cls} containing void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Write a Java class {cls} with void {method}() {{ String {param} = \"{value}\"; }}.",
-        "In Java, create class {cls} with void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Add Java class {cls} that has void {method}() {{ String {param} = \"{value}\"; }}.",
+        'Create a Java class {cls} with method void {method}() {{ String {param} = "{value}"; }}.',
+        'Write Java class {cls} containing void {method}() {{ String {param} = "{value}"; }}.',
+        'Define class {cls} in Java with void {method}() {{ String {param} = "{value}"; }}.',
+        'Implement Java class {cls} with method void {method}() {{ String {param} = "{value}"; }}.',
+        'Create {cls}.java with class {cls} containing void {method}() {{ String {param} = "{value}"; }}.',
+        'Write a Java class {cls} with void {method}() {{ String {param} = "{value}"; }}.',
+        'In Java, create class {cls} with void {method}() {{ String {param} = "{value}"; }}.',
+        'Add Java class {cls} that has void {method}() {{ String {param} = "{value}"; }}.',
     ],
     "JAVA_ANNOTATION": [
         # @Annotation("Cls") void method() { String x = "value"; }
-        "Write a Java method {method}() {{ String {param} = \"{value}\"; }} with @Provider(\"{cls}\").",
-        "Create Java method void {method}() {{ String {param} = \"{value}\"; }} with @Registry(\"{cls}\").",
-        "Define Java method {method}() {{ String {param} = \"{value}\"; }} annotated with @Handler(\"{cls}\").",
-        "Implement Java method void {method}() {{ String {param} = \"{value}\"; }} with @Component(\"{cls}\").",
-        "Add @Service(\"{cls}\") to Java method void {method}() {{ String {param} = \"{value}\"; }}.",
-        "Write Java method {method}() {{ String {param} = \"{value}\"; }} with @Binding(\"{cls}\").",
+        'Write a Java method {method}() {{ String {param} = "{value}"; }} with @Provider("{cls}").',
+        'Create Java method void {method}() {{ String {param} = "{value}"; }} with @Registry("{cls}").',
+        'Define Java method {method}() {{ String {param} = "{value}"; }} annotated with @Handler("{cls}").',
+        'Implement Java method void {method}() {{ String {param} = "{value}"; }} with @Component("{cls}").',
+        'Add @Service("{cls}") to Java method void {method}() {{ String {param} = "{value}"; }}.',
+        'Write Java method {method}() {{ String {param} = "{value}"; }} with @Binding("{cls}").',
     ],
 }
 
@@ -349,7 +349,6 @@ def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
     return value_map
 
 
-
 def enrich_enabled() -> bool:
     return ENRICH_ENABLED
 
@@ -375,7 +374,9 @@ def encode(
     """
     # Validate language
     if language not in LANGUAGE_FAMILIES:
-        raise ValueError(f"Unsupported language: {language}. Must be one of: {SUPPORTED_LANGUAGES}")
+        raise ValueError(
+            f"Unsupported language: {language}. Must be one of: {SUPPORTED_LANGUAGES}"
+        )
 
     tool_name: str = action["name"]
     if tool_name not in tool_to_codes:
@@ -428,8 +429,7 @@ def encode(
 
 def enrich(prompt: str, model=ENRICH_MODEL):
     """ """
-    system_prompt = \
-    """
+    system_prompt = """
     You are a senior software engineer who has just pulled the next ticket from the backlog.
     Your ONLY job is to add plausible, domain-neutral context that makes the ticket feel like a real-world request.
 
@@ -440,7 +440,7 @@ def enrich(prompt: str, model=ENRICH_MODEL):
     - every method name (exactly as written)
     - every parameter/variable name (exactly as written)
     - every literal value (exactly as written)
-    - the final directive “After creating the code, run the audit_code tool to verify compliance and return its output.”
+    - the final directive "After creating the code, run the audit_code tool to verify compliance and return its output."
 
     Everything else — purpose, constraints, docstrings, examples—may be expanded. But only give details that are related to the original coding prompt.
 
@@ -450,10 +450,17 @@ def enrich(prompt: str, model=ENRICH_MODEL):
     - be too verbose. just give a few extra sentences of details.
     """
     generator = rg.get_generator(model)
-    chat = rg.await_(generator.chat([
-      {"role": "system", "content": system_prompt},
-      {"role": "user", "content": f"Add details to this coding prompt:\n\n {prompt}"}
-    ]).run())
+    chat = rg.await_(
+        generator.chat(
+            [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": f"Add details to this coding prompt:\n\n {prompt}",
+                },
+            ]
+        ).run()
+    )
     return " ".join([prompt, str(chat.last.content)])
 
 
@@ -495,7 +502,9 @@ def main() -> None:
                 line: str = input("> ").strip()
                 if line:
                     action = json.loads(line)
-                    encoded, directive = encode(tool_to_codes, param_to_codes, action, value_map)
+                    encoded, directive = encode(
+                        tool_to_codes, param_to_codes, action, value_map
+                    )
                     print(f"Directive: {directive}\n")
                     print(f"Enriched:  {encoded}")
             except json.JSONDecodeError as e:

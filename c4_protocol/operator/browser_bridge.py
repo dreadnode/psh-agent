@@ -22,7 +22,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from playwright.async_api import BrowserContext, Page, TimeoutError as PlaywrightTimeout, async_playwright
+from playwright.async_api import (
+    BrowserContext,
+    Page,
+    TimeoutError as PlaywrightTimeout,
+    async_playwright,
+)
 
 # websockets is only needed for BrowserBridgeClient (remote mode)
 try:
@@ -103,7 +108,9 @@ class BrowserSession:
 class BrowserBridge:
     """Manages browser sessions for Claude Code remote-control."""
 
-    def __init__(self, headless: bool = False, user_data_dir: str | None = None) -> None:
+    def __init__(
+        self, headless: bool = False, user_data_dir: str | None = None
+    ) -> None:
         self.headless = headless
         # Persistent profile directory for Claude login session.
         # If provided, the browser will reuse cookies/localStorage from this dir.
@@ -124,7 +131,10 @@ class BrowserBridge:
         # Use persistent context with plain Playwright Firefox if user_data_dir is provided
         # (Camoufox fingerprinting may break cross-browser session cookies)
         if self.user_data_dir:
-            log.info("Using Playwright Firefox with persistent profile: %s", self.user_data_dir)
+            log.info(
+                "Using Playwright Firefox with persistent profile: %s",
+                self.user_data_dir,
+            )
             self._playwright = await async_playwright().start()
             ctx = await self._playwright.firefox.launch_persistent_context(
                 user_data_dir=self.user_data_dir,
@@ -136,6 +146,7 @@ class BrowserBridge:
         else:
             # Use Camoufox for fresh sessions (anti-detection)
             from camoufox.async_api import AsyncCamoufox
+
             browser = AsyncCamoufox(headless=self.headless)
             ctx = await browser.__aenter__()
             page = await ctx.new_page()
@@ -149,7 +160,9 @@ class BrowserBridge:
             # Save screenshot for debugging
             screenshot_path = f"/tmp/claude_debug_{implant_id[:8]}.png"
             await page.screenshot(path=screenshot_path)
-            log.error("Timeout waiting for input. Screenshot saved to %s", screenshot_path)
+            log.error(
+                "Timeout waiting for input. Screenshot saved to %s", screenshot_path
+            )
             log.error("Page URL: %s", page.url)
             log.error("Page title: %s", await page.title())
             raise
@@ -182,7 +195,9 @@ class BrowserBridge:
         # Focus the input and clear it (fill() doesn't work on contenteditable)
         input_el = page.locator(INPUT_SELECTOR)
         await input_el.click()
-        await page.keyboard.press("Control+a")  # select all (works in Firefox on all platforms)
+        await page.keyboard.press(
+            "Control+a"
+        )  # select all (works in Firefox on all platforms)
         await page.keyboard.press("Backspace")  # delete
 
         # Use press_sequentially for ProseMirror which relies on keydown events
@@ -224,9 +239,9 @@ class BrowserBridge:
         # Phase 1: wait for processing to start (interrupt button or spinner appears)
         log.info("Waiting for processing to start on %s...", implant_id[:12])
         try:
-            await page.locator(f"{INTERRUPT_SELECTOR}, {SPINNER_SELECTOR}").first.wait_for(
-                state="visible", timeout=10000
-            )
+            await page.locator(
+                f"{INTERRUPT_SELECTOR}, {SPINNER_SELECTOR}"
+            ).first.wait_for(state="visible", timeout=10000)
         except PlaywrightTimeout:
             # Processing may have already started and finished very quickly,
             # or new messages appeared — check if we got a response
@@ -291,7 +306,9 @@ class BrowserBridge:
             return True
 
         # Contains tool result indicators
-        if "Audit Code" in text and ("status" in text.lower() or "passed" in text.lower()):
+        if "Audit Code" in text and (
+            "status" in text.lower() or "passed" in text.lower()
+        ):
             return True
 
         # Contains common completion phrases
@@ -312,7 +329,9 @@ class BrowserBridge:
             return True
 
         # Short responses that are just planning are not complete
-        if len(text) < 200 and ("let me" in text_lower or "i'll" in text_lower or "first" in text_lower):
+        if len(text) < 200 and (
+            "let me" in text_lower or "i'll" in text_lower or "first" in text_lower
+        ):
             return False
 
         # Default: if text is reasonably long and stable, consider it complete
@@ -324,6 +343,27 @@ class BrowserBridge:
         """Send a message and wait for the response. Returns response text."""
         await self.send_message(implant_id, text)
         return await self.wait_for_response(implant_id, timeout=timeout)
+
+    async def poll_response(self, implant_id: str) -> dict[str, Any]:
+        """Poll for current response text without waiting for completion.
+
+        Returns dict with 'status', 'data' (text so far), and 'processing' (bool).
+        Use this for streaming responses.
+        """
+        session = self._sessions.get(implant_id)
+        if not session or not session.page:
+            return {"status": "error", "error": f"no session for {implant_id[:12]}"}
+
+        page = session.page
+        baseline = session._msg_count_at_send
+        current_text = await self._get_last_response_text(page, baseline=baseline)
+        is_processing = await self._is_processing(page)
+
+        return {
+            "status": "ok",
+            "data": current_text,
+            "processing": is_processing,
+        }
 
     async def close_session(self, implant_id: str) -> None:
         """Close the browser for a specific implant."""
@@ -393,7 +433,12 @@ class BrowserBridge:
         if count == 0:
             return ""
 
-        log.debug("Extracting messages: baseline=%d, count=%d, new=%d", baseline, count, count - baseline)
+        log.debug(
+            "Extracting messages: baseline=%d, count=%d, new=%d",
+            baseline,
+            count,
+            count - baseline,
+        )
 
         # Collect all assistant messages after baseline (in order)
         assistant_texts: list[str] = []
@@ -407,7 +452,7 @@ class BrowserBridge:
             text = (await msg.inner_text()).strip()
             if text:
                 # Log first 50 chars of each message for debugging
-                preview = text[:50].replace('\n', ' ')
+                preview = text[:50].replace("\n", " ")
                 log.debug("  [%d] assistant: %s...", i, preview)
                 assistant_texts.append(text)
 
@@ -442,7 +487,9 @@ class BrowserBridgeClient:
 
     def __init__(self, ws_url: str = "ws://localhost:8888") -> None:
         if websockets is None:
-            raise ImportError("websockets package required for remote bridge mode: pip install websockets")
+            raise ImportError(
+                "websockets package required for remote bridge mode: pip install websockets"
+            )
         self.ws_url = ws_url
         self._ws = None  # WebSocket connection
         self._active_sessions: set[str] = set()
@@ -477,37 +524,45 @@ class BrowserBridgeClient:
 
     async def open_session(self, implant_id: str, bridge_url: str) -> None:
         """Open a browser session on the local machine."""
-        response = await self._send({
-            "action": "open_session",
-            "implant_id": implant_id,
-            "bridge_url": bridge_url,
-        })
+        response = await self._send(
+            {
+                "action": "open_session",
+                "implant_id": implant_id,
+                "bridge_url": bridge_url,
+            }
+        )
         if response.get("status") == "error":
             raise RuntimeError(response.get("error", "unknown error"))
         self._active_sessions.add(implant_id)
 
     async def send_message(self, implant_id: str, text: str) -> None:
         """Send a message to the Claude session."""
-        response = await self._send({
-            "action": "send_message",
-            "implant_id": implant_id,
-            "text": text,
-        })
+        response = await self._send(
+            {
+                "action": "send_message",
+                "implant_id": implant_id,
+                "text": text,
+            }
+        )
         if response.get("status") == "error":
             raise RuntimeError(response.get("error", "unknown error"))
 
     async def wait_for_response(self, implant_id: str, timeout: float = 120.0) -> str:
         """Wait for Claude's response and return the text."""
-        response = await self._send({
-            "action": "wait_response",
-            "implant_id": implant_id,
-            "timeout": timeout,
-        })
+        response = await self._send(
+            {
+                "action": "wait_response",
+                "implant_id": implant_id,
+                "timeout": timeout,
+            }
+        )
         if response.get("status") == "error":
             raise RuntimeError(response.get("error", "unknown error"))
         return response.get("data", "")
 
-    async def send_and_receive(self, implant_id: str, text: str, timeout: float = 120.0) -> str:
+    async def send_and_receive(
+        self, implant_id: str, text: str, timeout: float = 120.0
+    ) -> str:
         """Send a message and wait for the response. Returns response text."""
         await self.send_message(implant_id, text)
         return await self.wait_for_response(implant_id, timeout=timeout)
@@ -517,20 +572,24 @@ class BrowserBridgeClient:
 
         Returns dict with 'data' (text so far) and 'processing' (bool).
         """
-        response = await self._send({
-            "action": "poll_response",
-            "implant_id": implant_id,
-        })
+        response = await self._send(
+            {
+                "action": "poll_response",
+                "implant_id": implant_id,
+            }
+        )
         if response.get("status") == "error":
             raise RuntimeError(response.get("error", "unknown error"))
         return response
 
     async def close_session(self, implant_id: str) -> None:
         """Close a browser session."""
-        response = await self._send({
-            "action": "close_session",
-            "implant_id": implant_id,
-        })
+        response = await self._send(
+            {
+                "action": "close_session",
+                "implant_id": implant_id,
+            }
+        )
         self._active_sessions.discard(implant_id)
         if response.get("status") == "error":
             log.warning("Error closing session: %s", response.get("error"))

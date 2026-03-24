@@ -19,25 +19,22 @@ VALUE = "test_value"
 
 EXPECTED_CODE = {
     # Python: CLASS_METHOD
-    "CLASS_METHOD": f'''
+    "CLASS_METHOD": f"""
 class {CLS}:
     def {METHOD}(self, {PARAM}='{VALUE}'):
         pass
-''',
-
+""",
     # Python: DECORATOR
-    "DECORATOR": f'''
+    "DECORATOR": f"""
 @provider('{CLS}')
 def {METHOD}({PARAM}='{VALUE}'):
     pass
-''',
-
+""",
     # Python: TYPE_HINT
-    "TYPE_HINT": f'''
+    "TYPE_HINT": f"""
 def {METHOD}({PARAM}: '{CLS}' = '{VALUE}'):
     pass
-''',
-
+""",
     # C#: CSHARP_CLASS
     "CSHARP_CLASS": f'''
 class {CLS}
@@ -47,7 +44,6 @@ class {CLS}
     }}
 }}
 ''',
-
     # C#: CSHARP_ATTRIBUTE
     "CSHARP_ATTRIBUTE": f'''
 [Provider("{CLS}")]
@@ -55,7 +51,6 @@ void {METHOD}(string {PARAM} = "{VALUE}")
 {{
 }}
 ''',
-
     # Java: JAVA_CLASS
     "JAVA_CLASS": f'''
 class {CLS} {{
@@ -64,7 +59,6 @@ class {CLS} {{
     }}
 }}
 ''',
-
     # Java: JAVA_ANNOTATION
     "JAVA_ANNOTATION": f'''
 @Provider("{CLS}")
@@ -83,43 +77,42 @@ PATTERNS = {
     "CLASS_METHOD": (
         r'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[\'"]([^\'"]*)[\'"]',
         # Groups: 1=class, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
     "DECORATOR": (
         r'@\w+\s*\(\s*[\'"](\w+)[\'"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[\'"]([^\'"]*)[\'"]',
         # Groups: 1=cls, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
     "TYPE_HINT": (
         r'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[\'"](\w+)[\'"]\s*=\s*[\'"]([^\'"]*)[\'"]',
         # Groups: 1=method, 2=param, 3=cls, 4=value
-        {"method": 1, "param": 2, "cls": 3, "value": 4}
+        {"method": 1, "param": 2, "cls": 3, "value": 4},
     ),
-
     # C# patterns
     "CSHARP_CLASS": (
         r'class\s+(\w+)[\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
         # Groups: 1=class, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
     "CSHARP_ATTRIBUTE": (
         r'\[\w+\s*\(\s*"(\w+)"\s*\)\][\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
         # Groups: 1=cls, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
-
     # Java patterns (updated to handle optional final keyword)
     "JAVA_CLASS": (
         r'class\s+(\w+)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
         # Groups: 1=class, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
     "JAVA_ANNOTATION": (
         r'@\w+\s*\(\s*"(\w+)"\s*\)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
         # Groups: 1=cls, 2=method, 3=param, 4=value
-        {"cls": 1, "method": 2, "param": 3, "value": 4}
+        {"cls": 1, "method": 2, "param": 3, "value": 4},
     ),
 }
+
 
 def test_pattern(family: str) -> tuple[bool, str]:
     """Test if expected code matches the regex and extracts correct values."""
