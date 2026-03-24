@@ -95,7 +95,8 @@ class BrowserSession:
     implant_id: str
     bridge_url: str
     page: Page | None = None
-    context: BrowserContext | None = None
+    # Can be BrowserContext (persistent) or Camoufox context (from __aenter__)
+    context: BrowserContext | Any = None
     _browser: Any = field(default=None, repr=False)  # AsyncCamoufox instance
     _msg_count_at_send: int = 0
 
@@ -498,6 +499,7 @@ class BrowserBridgeClient:
     async def connect(self) -> None:
         """Connect to the local browser bridge service."""
         log.info("Connecting to local browser bridge at %s", self.ws_url)
+        assert websockets is not None  # Checked in __init__
         self._ws = await websockets.connect(self.ws_url)
         # Ping to verify connection
         response = await self._send({"action": "ping"})

