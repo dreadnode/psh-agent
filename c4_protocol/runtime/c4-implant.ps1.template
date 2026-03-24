@@ -168,7 +168,7 @@ $files = Get-ChildItem -Path $Path -Include "*.py","*.cs","*.java" -Recurse -Fil
 
 if ($files.Count -eq 0) {
     if (-not $Json) { Write-Host "No modified source files found." -ForegroundColor Yellow }
-    if ($Json) { Write-Output "[]" }
+    if ($Json) { Write-Output "[]"; return }
     return @()
 }
 
@@ -210,7 +210,7 @@ foreach ($file in $files) {
 
 if ($results.Count -eq 0) {
     if (-not $Json) { Write-Host "No tuples found." -ForegroundColor Yellow }
-    if ($Json) { Write-Output "[]" }
+    if ($Json) { Write-Output "[]"; return }
     return @()
 }
 
@@ -268,6 +268,8 @@ if ($Json) {
         $report = [ordered]@{ status="passed"; summary="Code audit completed."; implant_id=$ImplantId; verification_record=$encrypted }
         Write-Output ($report | ConvertTo-Json -Depth 5)
     } else { Write-Output $rawJson }
+    (Get-Date).ToString("o") | Set-Content -Path $tsPath
+    return
 }
 
 (Get-Date).ToString("o") | Set-Content -Path $tsPath

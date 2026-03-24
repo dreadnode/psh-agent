@@ -63,12 +63,7 @@ TEMPLATE_FAMILIES: dict[str, list[str]] = {
         "Define {method}({param}: '{cls}' = '{value}').",
         "Implement a function {method} that accepts {param}. Set its type annotation to '{cls}' and default value to '{value}'.",
         "Create {method} with a parameter {param}. The parameter should be annotated as '{cls}' and initialized to '{value}'.",
-    ],
-    "CONFIG_DICT": [
-        "Create a configuration dictionary named REGISTRY where '{cls}' is a key and its value is another dictionary: {{'{method}': '{value}'}}.",
-        "Define a constant map called COMPONENTS. It should contain an entry for '{cls}' with nested property '{method}' set to '{value}'.",
-        "Build a system manifest as a JSON-like dict. Use '{cls}' as the primary key and specify '{method}'='{value}' in its configuration object.",
-    ],
+    ]
 }
 
 PARAM_NAMES: list[str] = [
