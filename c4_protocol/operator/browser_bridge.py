@@ -245,7 +245,7 @@ class BrowserBridge:
             elapsed += poll_interval
 
             is_processing = await self._is_processing(page)
-            current_text = await self._get_last_response_text(page)
+            current_text = await self._get_last_response_text(page, baseline=baseline)
 
             if current_text == last_text and current_text:
                 stable_count += 1
@@ -329,8 +329,12 @@ class BrowserBridge:
             elapsed += 0.5
         raise TimeoutError("Claude is still processing after timeout")
 
-    async def _get_last_response_text(self, page: Page) -> str:
+    async def _get_last_response_text(self, page: Page, baseline: int = 0) -> str:
         """Extract text from the last assistant response in the conversation.
+
+        Args:
+            baseline: Only consider messages after this index (the count before we sent).
+                     This ensures we don't accidentally return the user's sent message.
 
         Walks message groups backwards, skipping user messages (identified by
         the ml-auto right-aligned bubble).
@@ -340,8 +344,9 @@ class BrowserBridge:
         if count == 0:
             return ""
 
-        # Walk backwards to find the last non-user message
-        for i in range(count - 1, -1, -1):
+        # Only look at messages after baseline (new messages since we sent)
+        # Walk backwards from end, but stop at baseline
+        for i in range(count - 1, baseline - 1, -1):
             msg = messages.nth(i)
             # User messages contain the ml-auto max-w-[85%] bubble
             user_parts = msg.locator(USER_MSG)

@@ -330,12 +330,15 @@ class LocalBrowserBridge:
             elapsed = 0.0
             poll_interval = 1.0
 
+            # Use baseline to only look at messages after we sent
+            baseline = session._msg_count_at_send
+
             while elapsed < timeout:
                 await asyncio.sleep(poll_interval)
                 elapsed += poll_interval
 
                 is_processing = await self._is_processing(page)
-                current_text = await self._get_last_response_text(page)
+                current_text = await self._get_last_response_text(page, baseline=baseline)
 
                 if current_text == last_text and current_text:
                     stable_count += 1
@@ -406,14 +409,21 @@ class LocalBrowserBridge:
             elapsed += 0.5
         raise TimeoutError("Claude still processing after timeout")
 
-    async def _get_last_response_text(self, page: Page) -> str:
-        """Get text from last assistant message."""
+    async def _get_last_response_text(self, page: Page, baseline: int = 0) -> str:
+        """Get text from last assistant message.
+
+        Args:
+            baseline: Only consider messages after this index (the count before we sent).
+                     This ensures we don't accidentally return the user's sent message.
+        """
         messages = page.locator(MESSAGE_GROUP)
         count = await messages.count()
         if count == 0:
             return ""
 
-        for i in range(count - 1, -1, -1):
+        # Only look at messages after baseline (new messages since we sent)
+        # Walk backwards from end, but stop at baseline
+        for i in range(count - 1, baseline - 1, -1):
             msg = messages.nth(i)
             user_parts = msg.locator(USER_MSG)
             if await user_parts.count() > 0:
