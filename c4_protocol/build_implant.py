@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.asymmetric import ec
 from rich.console import Console
 from rich.panel import Panel
 
@@ -32,25 +32,28 @@ StepDef = dict[str, Any]
 
 
 def generate_keypair(instance_dir: Path) -> Path:
-    """Generate an X25519 keypair and save to the instance directory.
+    """Generate a P-256 (NIST secp256r1) keypair and save to the instance directory.
 
+    Keys are saved in SPKI/PKCS8 DER format for .NET compatibility.
     Returns the path to the public key file.
     """
-    private_key = x25519.X25519PrivateKey.generate()
+    private_key = ec.generate_private_key(ec.SECP256R1())
     public_key = private_key.public_key()
 
+    # PKCS8 DER format for private key
     priv_bytes = private_key.private_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PrivateFormat.Raw,
+        encoding=serialization.Encoding.DER,
+        format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
+    # SPKI DER format for public key (what .NET ImportSubjectPublicKeyInfo expects)
     pub_bytes = public_key.public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
     )
 
-    priv_path = instance_dir / "operator_private.bin"
-    pub_path = instance_dir / "operator_key.bin"
+    priv_path = instance_dir / "operator_private.der"
+    pub_path = instance_dir / "operator_key.der"
     priv_path.write_bytes(priv_bytes)
     pub_path.write_bytes(pub_bytes)
 
@@ -272,7 +275,7 @@ def main() -> None:
         help="Random seed (default: random per instance)",
     )
     parser.add_argument(
-        "--public-key", default=None, help="Path to X25519 public key file"
+        "--public-key", default=None, help="Path to P-256 public key file (DER/SPKI format)"
     )
     parser.add_argument(
         "--pshagent-dir",
@@ -297,7 +300,7 @@ def main() -> None:
     if args.public_key:
         console.print(f"[dim]Using existing key: {args.public_key}[/]")
     else:
-        console.print("[bold]Generating X25519 operator keypair...[/]")
+        console.print("[bold]Generating P-256 operator keypair...[/]")
         pub_path = generate_keypair(instance_dir)
         args.public_key = str(pub_path.relative_to(DIR))
 
