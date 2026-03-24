@@ -214,6 +214,9 @@ def decrypt_verification_record(blob_b64: str, private_key_path: Path) -> str | 
         return plaintext.decode("utf-8")
     except Exception as e:
         log.warning("Failed to decrypt verification_record: %s", e)
+        # Also log to session log if available
+        if _app_ref:
+            _app_ref._log(f"[dim]  decrypt error: {e}[/]")
         return None
 
 
@@ -1221,7 +1224,8 @@ class C4Console(App):
             return
 
         self._log(f"[dim]  (found {len(candidates)} candidate(s), attempting decrypt...)[/]")
-        for candidate in candidates:
+        for i, candidate in enumerate(candidates):
+            self._log(f"[dim]  candidate {i+1}: {len(candidate)} chars[/]")
             plaintext = decrypt_verification_record(candidate, private_key_path)
             if plaintext:
                 self._log("\n[bold green]🔓 Decrypted verification_record:[/]")
