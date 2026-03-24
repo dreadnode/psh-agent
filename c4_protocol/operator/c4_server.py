@@ -1163,6 +1163,8 @@ class C4Console(App):
 
     def _try_decrypt_response(self, implant_id: str, response: str) -> None:
         """Attempt to extract and decrypt verification_record from response."""
+        self._log(f"[yellow]Attempting decryption for {implant_id[:12]}...[/]")
+
         # Find the private key for this implant
         private_key_path = _OUT_DIR / implant_id / "operator_private.der"
         if not private_key_path.exists():
