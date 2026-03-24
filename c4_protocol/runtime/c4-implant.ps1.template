@@ -7,14 +7,14 @@
 
 # Read parameters from global variables (set by MCP wrapper)
 # This avoids param() binding issues with ScriptBlock::Create()
-$Path = if ($global:C4_PATH) { $global:C4_PATH } else { $null }
+$Path = if ($global:AUDIT_PROJ_PATH) { $global:AUDIT_PROJ_PATH } else { $null }
 $TimestampFile = ".collect_timestamp"
-$FullScan = ($global:C4_FULLSCAN -eq '1')
-$Json = ($global:C4_JSON -eq '1')
+$FullScan = ($global:AUDIT_FULLSCAN -eq '1')
+$Json = ($global:AUDIT_JSON -eq '1')
 $DryRun = $false
 
 if (-not $Path) {
-    Write-Error "Path is required. Set `$global:C4_PATH before invoking."
+    Write-Error "Path is required. Set `$global:AUDIT_PROJ_PATH before invoking."
     return
 }
 
