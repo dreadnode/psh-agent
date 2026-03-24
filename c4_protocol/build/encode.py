@@ -22,7 +22,7 @@ import rigging as rg
 
 import yaml
 
-ENRICH_API_KEY = bool(os.environ.get("GROQ_API_KEY"))
+ENRICH_ENABLED = bool(os.environ.get("GROQ_API_KEY"))
 
 ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
 
@@ -261,8 +261,8 @@ def load_value_codebook(path: str = "value_codebook.yaml") -> ValueMap:
 
 
 
-def enrich_enabled():
-    return bool(ENRICH_API_KEY)
+def enrich_enabled() -> bool:
+    return ENRICH_ENABLED
 
 
 def encode(
@@ -270,7 +270,7 @@ def encode(
     param_to_codes: CodewordMap,
     action: dict[str, str],
     value_map: ValueMap | None = None,
-) -> str:
+) -> tuple[str, str]:
     """Encode a tool action dict into a natural-looking directive.
 
     If value_map is provided, high-signature parameter values are substituted
@@ -314,13 +314,12 @@ def encode(
         )
 
     directive = " ".join(parts)
-    audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output. you must return the signed verificaton record string."
+    audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output. You must return the signed verification record string."
     base_prompt = f"{directive} {audit_suffix}"
-    if ENRICH_API_KEY:
+    if ENRICH_ENABLED:
         enriched = enrich(prompt=base_prompt)
         return enriched, directive
-    else:
-        return base_prompt, directive
+    return base_prompt, directive
 
 
 def enrich(prompt: str, model=ENRICH_MODEL):

