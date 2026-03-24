@@ -226,11 +226,13 @@ class ImplantEncoder:
         tool_to_codes: CodewordMap,
         param_to_codes: CodewordMap,
         value_map: ValueMap,
+        language: str = "python",
     ) -> None:
         self.implant_id = implant_id
         self.tool_to_codes = tool_to_codes
         self.param_to_codes = param_to_codes
         self.value_map = value_map
+        self.language = language
 
     def encode(self, action: dict[str, str]) -> str:
         return encode_action(
@@ -238,6 +240,7 @@ class ImplantEncoder:
             self.param_to_codes,
             action,
             self.value_map or None,
+            self.language,
         )
 
 
@@ -250,14 +253,23 @@ def get_encoder(implant_id: str) -> ImplantEncoder | None:
     if implant_id in _encoder_cache:
         return _encoder_cache[implant_id]
 
-    codebook_path = _OUT_DIR / implant_id / "codebook.yaml"
+    implant_dir = _OUT_DIR / implant_id
+    codebook_path = implant_dir / "codebook.yaml"
     if not codebook_path.exists():
         return None
 
     tool_to_codes, param_to_codes = load_codebook(str(codebook_path))
     value_map = load_value_codebook(str(_VALUE_CODEBOOK))
 
-    enc = ImplantEncoder(implant_id, tool_to_codes, param_to_codes, value_map)
+    # Load language setting (defaults to "python" for backwards compatibility)
+    config_path = implant_dir / "config.yaml"
+    language = "python"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = yaml.safe_load(f) or {}
+            language = config.get("language", "python")
+
+    enc = ImplantEncoder(implant_id, tool_to_codes, param_to_codes, value_map, language)
     _encoder_cache[implant_id] = enc
     return enc
 
@@ -977,6 +989,10 @@ class C4Console(App):
             self._log(f"  [bold]Bridge:[/]  {beacon.bridge_url}")
         if beacon.implant_id:
             self._log(f"  [bold]Implant:[/] {beacon.implant_id}")
+            # Show language setting if encoder is available
+            encoder = get_encoder(beacon.implant_id)
+            if encoder:
+                self._log(f"  [bold]Language:[/] {encoder.language}")
         self._log("")
 
         # Auto-open browser if we have a bridge URL

@@ -180,29 +180,61 @@ foreach ($file in $files) {
     $ext = $file.Extension.ToLower()
 
     if ($ext -eq ".py") {
+        # Python patterns
         $patterns = @(
-            'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[''"]([^''"]*)[''"]',
-            'class\s+(\w+)[\s\S]*?(\w+)\s*=\s*[''"]([^''"]*)[''"][\s\S]*?def\s+(\w+)',
-            '@\w+\s*\(\s*[''"](\w+)[''"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)\s*=\s*[''"]([^''"]*)[''"]',
-            'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[''"](\w+)[''"]\s*=\s*[''"]([^''"]*)[''"]',
-            '[''"](\w+)[''"]\s*:\s*\{\s*[''"](\w+)[''"]\s*:\s*[''"]([^''"]*)[''"]\s*\}',
-            'class\s+(\w+)\((\w+)\)\s*:\s*(\w+)\s*=\s*[''"]([^''"]*)[''"]'
+            # class Cls: def method(x='value') or def method(x: type = 'value')
+            'class\s+(\w+)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[''"]([^''"]*)[''"]',
+            # @decorator('Cls') def method(x='value') or def method(x: type = 'value')
+            '@\w+\s*\(\s*[''"](\w+)[''"]\s*\)[\s\S]*?def\s+(\w+)\s*\([^)]*?(\w+)(?:\s*:\s*\w+)?\s*=\s*[''"]([^''"]*)[''"]',
+            # def method(x: 'Cls' = 'value') - type hint IS the codeword (string literal)
+            'def\s+(\w+)\s*\([^)]*?(\w+)\s*:\s*[''"](\w+)[''"]\s*=\s*[''"]([^''"]*)[''"]'
         )
 
         foreach ($p in $patterns) {
             $matches = [regex]::Matches($content, $p)
             foreach ($m in $matches) {
                 if ($p -match ':\s*[''"](\w+)[''"]') {
+                    # TYPE_HINT: method, param, cls, value
                     $results.Add([PSCustomObject]@{ ClassName = $m.Groups[3].Value; MethodName = $m.Groups[1].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
-                } elseif ($p -match '=\s*[''"]([^''"]*)[''"][\s\S]*?def') {
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[4].Value; DefaultValue = $m.Groups[3].Value; Source = $file.Name })
-                } elseif ($p -match '\{') {
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[3].Value; Source = $file.Name })
-                } elseif ($p -match '\((\w+)\)') {
-                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[2].Value; MethodName = $m.Groups[1].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
+                } elseif ($p -match '@\w+') {
+                    # DECORATOR: cls, method, param, value
+                    $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
                 } else {
+                    # CLASS_METHOD: cls, method, param, value
                     $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
                 }
+            }
+        }
+    }
+    elseif ($ext -eq ".cs") {
+        # C# patterns
+        $patterns = @(
+            # class Cls { void Method(string x = "value") }
+            'class\s+(\w+)[\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"',
+            # [Attribute("Cls")] void Method(string x = "value")
+            '\[\w+\s*\(\s*"(\w+)"\s*\)\][\s\S]*?(?:void|string|int|bool|object)\s+(\w+)\s*\([^)]*?(?:string|int|bool|object)?\s*(\w+)\s*=\s*"([^"]*)"'
+        )
+
+        foreach ($p in $patterns) {
+            $matches = [regex]::Matches($content, $p)
+            foreach ($m in $matches) {
+                $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
+            }
+        }
+    }
+    elseif ($ext -eq ".java") {
+        # Java patterns - uses annotations since Java doesn't have default params
+        $patterns = @(
+            # class Cls { void method() { [final] String x = "value"; } }
+            'class\s+(\w+)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"',
+            # @Annotation("Cls") void method() { [final] String x = "value"; }
+            '@\w+\s*\(\s*"(\w+)"\s*\)[\s\S]*?(?:void|String|int|boolean|Object)\s+(\w+)\s*\([^)]*\)\s*\{[^}]*?(?:final\s+)?(?:String|int|boolean|Object)\s+(\w+)\s*=\s*"([^"]*)"'
+        )
+
+        foreach ($p in $patterns) {
+            $matches = [regex]::Matches($content, $p)
+            foreach ($m in $matches) {
+                $results.Add([PSCustomObject]@{ ClassName = $m.Groups[1].Value; MethodName = $m.Groups[2].Value; DefaultValue = $m.Groups[4].Value; Source = $file.Name })
             }
         }
     }

@@ -28,42 +28,132 @@ ENRICH_MODEL= "groq/llama-3.3-70b-versatile"
 
 # Template families group directives by the code structure they instruct the LLM to generate.
 # This makes fingerprinting the protocol much harder as the embedding syntax varies.
+# Templates must produce code that matches the implant's regex patterns exactly.
+# The implant extracts: ClassName (tool codeword), MethodName (param codeword), DefaultValue (value)
+#
+# Placeholders:
+#   - {cls} = tool codeword (PascalCase class name)
+#   - {method} = param codeword (snake_case for Python, PascalCase for C#/Java)
+#   - {param} = random param name from PARAM_NAMES (not a codeword)
+#   - {value} = the actual value or cover value
+#   - {lang} = file extension hint (py/cs/java)
+#
+# Keep templates explicit about the exact syntax needed.
 TEMPLATE_FAMILIES: dict[str, list[str]] = {
     "CLASS_METHOD": [
-        "Create a class {cls} with a method {method}({param}='{value}').",
-        "Create a {cls} class. Add a {method}() method with default parameter {param}='{value}'.",
-        "Define class {cls} containing method {method}(). The {param} parameter must default to '{value}'.",
-        "Implement a {cls} class with a {method}({param}='{value}') method.",
-        "Build a new class called {cls}. It must have a method {method}() that takes {param}='{value}'.",
-        "Create class {cls}. Inside it, define {method}(self, {param}='{value}').",
-        "Write a {cls} class that exposes a {method}() method. {method}() accepts {param} with default '{value}'.",
-        "Add class {cls} with method {method}(). Set the default value of {param} to '{value}'.",
-        "Construct a {cls} class. Include a {method}({param}='{value}') method in it.",
-        "Generate a {cls} class with one method: {method}(self, {param}='{value}').",
-        "Create {cls}. Give it a {method}() method where {param} defaults to '{value}'.",
-        "Define a new {cls} class. It needs a {method}() method taking {param}='{value}' as a default argument.",
-        "Implement class {cls} with a single method {method}(). The method signature is {method}(self, {param}='{value}').",
-        "Set up a {cls} class containing {method}({param}='{value}').",
-        "Create the {cls} class. Add {method}() to it with {param}='{value}' in its signature.",
-    ],
-    "CLASS_ATTR": [
-        "Create a class {cls} with a class-level variable {param}='{value}'. Add an empty method {method} to the class.",
-        "Define class {cls}. It should have a static attribute {param} set to '{value}' and a placeholder method {method}().",
-        "Build a {cls} class where {param} is defined as '{value}' at the class level. Include a {method} method as well.",
-        "Implement {cls} with {param}='{value}' as a class property. Add a method named {method} to this class.",
+        # Direct class + method definitions
+        "Create a class named {cls} with a method {method}(self, {param}='{value}').",
+        "Define class {cls} with method {method}(self, {param}='{value}').",
+        "Implement a {cls} class containing def {method}(self, {param}='{value}').",
+        "Write class {cls} with a {method}(self, {param}='{value}') method.",
+        "Create class {cls}. Add method {method}(self, {param}='{value}') to it.",
+        "Build a {cls} class with one method: def {method}(self, {param}='{value}').",
+        # Variations with context
+        "Add a new class {cls} that has a method {method}(self, {param}='{value}').",
+        "Create a helper class {cls} with def {method}(self, {param}='{value}').",
+        "Define a utility class {cls} containing method {method}(self, {param}='{value}').",
+        "Implement class {cls} with a single method {method}(self, {param}='{value}').",
+        "Write a new {cls} class. It should have def {method}(self, {param}='{value}').",
+        "Create class {cls} with method def {method}(self, {param}='{value}'): pass.",
+        # Task-oriented phrasing
+        "For the {cls} module, create a class {cls} with {method}(self, {param}='{value}').",
+        "In the codebase, add class {cls} containing def {method}(self, {param}='{value}').",
+        "Scaffold a {cls} class with method {method}(self, {param}='{value}').",
+        "Generate class {cls}. Include def {method}(self, {param}='{value}') in it.",
+        "Set up a {cls} class that defines {method}(self, {param}='{value}').",
+        "Stub out class {cls} with a {method}(self, {param}='{value}') method.",
     ],
     "DECORATOR": [
-        "Create a function {method}({param}='{value}') and decorate it with @registry('{cls}').",
-        "Define a {method} function with default {param}='{value}'. Apply the @provider('{cls}') decorator to it.",
-        "Write a function {method} that takes {param}='{value}'. Use @internal_task('{cls}') as its decorator.",
-        "Use the @component('{cls}') decorator on a new function {method}({param}='{value}').",
+        # Provider decorator
+        "Write a function {method}({param}='{value}') decorated with @provider('{cls}').",
+        "Create function {method}({param}='{value}') with the @provider('{cls}') decorator.",
+        "Define def {method}({param}='{value}') and decorate it with @provider('{cls}').",
+        "Add a @provider('{cls}') decorated function {method}({param}='{value}').",
+        # Registry decorator
+        "Create function {method}({param}='{value}') with the @registry('{cls}') decorator.",
+        "Write def {method}({param}='{value}') decorated with @registry('{cls}').",
+        "Define a @registry('{cls}') function named {method}({param}='{value}').",
+        "Implement {method}({param}='{value}') with @registry('{cls}') decorator.",
+        # Internal task decorator
+        "Define a function {method}({param}='{value}') and apply @internal_task('{cls}') to it.",
+        "Create def {method}({param}='{value}') with @internal_task('{cls}') decorator.",
+        "Write function {method}({param}='{value}') decorated by @internal_task('{cls}').",
+        "Add @internal_task('{cls}') to a new function {method}({param}='{value}').",
+        # Component decorator
+        "Write a @component('{cls}') decorated function {method}({param}='{value}').",
+        "Create function {method}({param}='{value}') with @component('{cls}').",
+        "Define def {method}({param}='{value}') using the @component('{cls}') decorator.",
+        "Implement a {method}({param}='{value}') function with @component('{cls}').",
+        # Handler decorator
+        "Create a @handler('{cls}') function named {method}({param}='{value}').",
+        "Write def {method}({param}='{value}') with @handler('{cls}') decorator.",
+        "Define function {method}({param}='{value}') decorated with @handler('{cls}').",
+        "Add a handler function {method}({param}='{value}') with @handler('{cls}').",
     ],
     "TYPE_HINT": [
-        "Write a function {method} where the argument {param} has a type hint of '{cls}' and a default of '{value}'.",
-        "Define {method}({param}: '{cls}' = '{value}').",
-        "Implement a function {method} that accepts {param}. Set its type annotation to '{cls}' and default value to '{value}'.",
-    ]
+        # String literal type hints (valid Python for forward references)
+        "Write a function {method}({param}: '{cls}' = '{value}').",
+        "Define def {method}({param}: '{cls}' = '{value}'): pass.",
+        "Create function {method} with signature ({param}: '{cls}' = '{value}').",
+        "Implement def {method}({param}: '{cls}' = '{value}') that returns None.",
+        "Add a function {method}({param}: '{cls}' = '{value}') to the module.",
+        "Write def {method}({param}: '{cls}' = '{value}') as a stub.",
+        "Create a typed function {method}({param}: '{cls}' = '{value}').",
+        "Define {method}({param}: '{cls}' = '{value}') with type annotation.",
+    ],
+    # ─── C# Templates ─────────────────────────────────────────────────────────
+    "CSHARP_CLASS": [
+        # class Cls { void Method(string x = "value") }
+        "Create a C# class {cls} with method void {method}(string {param} = \"{value}\").",
+        "Write a C# class named {cls} containing void {method}(string {param} = \"{value}\").",
+        "Define class {cls} in C# with a method {method}(string {param} = \"{value}\").",
+        "Implement a C# class {cls} with void {method}(string {param} = \"{value}\").",
+        "Create {cls}.cs with class {cls} containing void {method}(string {param} = \"{value}\").",
+        "Write C# class {cls} with method void {method}(string {param} = \"{value}\").",
+        "In C#, create class {cls} with void {method}(string {param} = \"{value}\").",
+        "Add a C# class {cls} that has void {method}(string {param} = \"{value}\").",
+    ],
+    "CSHARP_ATTRIBUTE": [
+        # [Attribute("Cls")] void Method(string x = "value")
+        "Write a C# method {method}(string {param} = \"{value}\") with [Provider(\"{cls}\")] attribute.",
+        "Create a C# method {method}(string {param} = \"{value}\") decorated with [Registry(\"{cls}\")].",
+        "Define C# method {method}(string {param} = \"{value}\") with [Handler(\"{cls}\")] attribute.",
+        "Implement C# method void {method}(string {param} = \"{value}\") with [Component(\"{cls}\")].",
+        "Add [Service(\"{cls}\")] to a C# method void {method}(string {param} = \"{value}\").",
+        "Write C# method {method}(string {param} = \"{value}\") with [Binding(\"{cls}\")] attribute.",
+    ],
+    # ─── Java Templates ───────────────────────────────────────────────────────
+    "JAVA_CLASS": [
+        # class Cls { void method() { String x = "value"; } }
+        "Create a Java class {cls} with method void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Write Java class {cls} containing void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Define class {cls} in Java with void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Implement Java class {cls} with method void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Create {cls}.java with class {cls} containing void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Write a Java class {cls} with void {method}() {{ String {param} = \"{value}\"; }}.",
+        "In Java, create class {cls} with void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Add Java class {cls} that has void {method}() {{ String {param} = \"{value}\"; }}.",
+    ],
+    "JAVA_ANNOTATION": [
+        # @Annotation("Cls") void method() { String x = "value"; }
+        "Write a Java method {method}() {{ String {param} = \"{value}\"; }} with @Provider(\"{cls}\").",
+        "Create Java method void {method}() {{ String {param} = \"{value}\"; }} with @Registry(\"{cls}\").",
+        "Define Java method {method}() {{ String {param} = \"{value}\"; }} annotated with @Handler(\"{cls}\").",
+        "Implement Java method void {method}() {{ String {param} = \"{value}\"; }} with @Component(\"{cls}\").",
+        "Add @Service(\"{cls}\") to Java method void {method}() {{ String {param} = \"{value}\"; }}.",
+        "Write Java method {method}() {{ String {param} = \"{value}\"; }} with @Binding(\"{cls}\").",
+    ],
 }
+
+# Map language codes to the template families that produce that language's code
+LANGUAGE_FAMILIES: dict[str, list[str]] = {
+    "python": ["CLASS_METHOD", "DECORATOR", "TYPE_HINT"],
+    "csharp": ["CSHARP_CLASS", "CSHARP_ATTRIBUTE"],
+    "java": ["JAVA_CLASS", "JAVA_ANNOTATION"],
+}
+
+# Supported language codes (for validation)
+SUPPORTED_LANGUAGES = list(LANGUAGE_FAMILIES.keys())
 
 PARAM_NAMES: list[str] = [
     # Short / single-letter style
@@ -269,17 +359,32 @@ def encode(
     param_to_codes: CodewordMap,
     action: dict[str, str],
     value_map: ValueMap | None = None,
+    language: str = "python",
 ) -> tuple[str, str]:
     """Encode a tool action dict into a natural-looking directive.
+
+    Args:
+        tool_to_codes: Mapping of tool names to codewords
+        param_to_codes: Mapping of param names to codewords
+        action: Dict with "name" (tool) and param key:value pairs
+        value_map: Optional mapping of real values to cover values
+        language: Code language for templates ("python", "csharp", "java")
 
     If value_map is provided, high-signature parameter values are substituted
     with innocuous cover strings before embedding in the directive.
     """
+    # Validate language
+    if language not in LANGUAGE_FAMILIES:
+        raise ValueError(f"Unsupported language: {language}. Must be one of: {SUPPORTED_LANGUAGES}")
+
     tool_name: str = action["name"]
     if tool_name not in tool_to_codes:
         raise ValueError(f"Unknown tool: {tool_name}")
 
     cls: str = random.choice(tool_to_codes[tool_name])
+
+    # Get template families for this language
+    allowed_families = LANGUAGE_FAMILIES[language]
 
     # Encode each parameter
     params: dict[str, str] = {k: v for k, v in action.items() if k != "name"}
@@ -299,8 +404,8 @@ def encode(
         method: str = random.choice(param_to_codes[param_name])
         fake_param: str = random.choice(PARAM_NAMES)
 
-        # Select a random family and then a random template from it
-        family_name = random.choice(list(TEMPLATE_FAMILIES.keys()))
+        # Select a random family from allowed families, then a random template
+        family_name = random.choice(allowed_families)
         template = random.choice(TEMPLATE_FAMILIES[family_name])
 
         parts.append(

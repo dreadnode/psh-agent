@@ -10,6 +10,7 @@ own codebook, salt, config, and stager.  The C2 server uses the implant ID
 
 import argparse
 import base64
+import random
 import shutil
 import subprocess
 import sys
@@ -18,10 +19,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import yaml
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from rich.console import Console
 from rich.panel import Panel
+
+# Supported languages for template generation
+SUPPORTED_LANGUAGES = ["python", "csharp", "java"]
 
 console = Console()
 
@@ -271,6 +276,12 @@ def main() -> None:
         default=None,
         help="Path to PshAgent module directory (default: ../PshAgent)",
     )
+    parser.add_argument(
+        "--language",
+        choices=SUPPORTED_LANGUAGES + ["random"],
+        default="random",
+        help="Code language for generated templates (python, csharp, java, random)",
+    )
     args = parser.parse_args()
 
     # Generate implant ID: adjective-noun prefix + shortened UUID
@@ -282,8 +293,23 @@ def main() -> None:
     if args.seed is None:
         args.seed = full_uuid.int % (2**31)
 
+    # Resolve "random" to an actual language (use implant seed for determinism)
+    if args.language == "random":
+        random.seed(args.seed)
+        args.language = random.choice(SUPPORTED_LANGUAGES)
+
     instance_dir = DIR / "implants" / implant_id
     instance_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save implant configuration
+    config = {
+        "language": args.language,
+        "implant_id": implant_id,
+        "seed": args.seed,
+    }
+    config_path = instance_dir / "config.yaml"
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
 
     # Generate or use existing operator keypair
     if args.public_key:
@@ -300,6 +326,7 @@ def main() -> None:
             f"[bold]C4 Protocol Pipeline (Encrypted Map Version)[/]\n"
             f"[dim]Implant ID:[/] {implant_id}\n"
             f"[dim]Instance:  [/] {instance_dir}\n"
+            f"[dim]Language:  [/] {args.language}\n"
             f"[dim]Seed:      [/] {args.seed}\n"
             f"[dim]Key:       [/] {args.public_key}",
             border_style="cyan",
