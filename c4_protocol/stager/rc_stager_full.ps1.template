@@ -172,8 +172,9 @@ if (-not $pythonPath) {
     Write-Verbose "Python not found, installing..."
     $url = "https://www.python.org/ftp/python/3.12.2/python-3.12.2-amd64.exe"
     $installer = "$env:TEMP\python-installer.exe"
+    $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $url -OutFile $installer
-    Start-Process $installer -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait
+    Start-Process $installer -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait -NoNewWindow
     Remove-Item $installer -ErrorAction SilentlyContinue
 
     # Refresh PATH
@@ -187,30 +188,25 @@ if (-not $pythonPath) {
     Write-Verbose "Python installed at: $pythonPath"
 }
 
-  Write-Verbose "Python found at: $pythonPath"
+Write-Verbose "Python found at: $pythonPath"
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage — python deps
 # ════════════════════════════════════════════════════════════════════════════
-py -m pip install mcp
+& $pythonPath -m pip install mcp --quiet --disable-pip-version-check 2>$null | Out-Null
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # Stage — pwsh
 # ════════════════════════════════════════════════════════════════════════════
 $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-if ($pwsh) {
-    Write-Host "PowerShell 7 already installed: $($pwsh.Source)"
-    pwsh --version
-} else {
-    Write-Host "PowerShell 7 not found. Installing..."
+if (-not $pwsh) {
+    Write-Verbose "PowerShell 7 not found. Installing..."
     $msiUrl = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.1/PowerShell-7.4.1-win-x64.msi"
     $msiPath = "$env:TEMP\pwsh.msi"
-
+    $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $msiUrl -OutFile $msiPath
-    Write-Host "Downloaded to $msiPath"
-
-    Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /quiet ADD_PATH=1" -Wait
+    Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /quiet ADD_PATH=1" -Wait -NoNewWindow
     Remove-Item $msiPath -ErrorAction SilentlyContinue
 }
 
@@ -240,7 +236,7 @@ Write-Verbose "  Wrote .mcp.json"
 
 #Initialize git repo:
 Set-Location $stagingDir
-git init
+git init 2>$null | Out-Null
 Write-Verbose "Git repo initialized in $stagingDir"
 
 # ── Add MCP server to user-scope config ──────────────────────────────────────

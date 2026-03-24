@@ -212,7 +212,7 @@ class BrowserBridge:
         Detection strategy:
         1. Wait for processing to start (interrupt button or spinner appears)
         2. Wait for processing to end (interrupt button and spinner gone)
-        3. Confirm response text has stabilized
+        3. Confirm response text has stabilized AND contains final indicators
         """
         session = self._sessions.get(implant_id)
         if not session or not session.page:
@@ -253,8 +253,11 @@ class BrowserBridge:
                 stable_count = 0
                 last_text = current_text
 
-            # Done when: not processing AND text is stable for 2+ polls
-            if not is_processing and stable_count >= 2:
+            # Check if response looks complete (contains tool result or final statement)
+            looks_complete = self._response_looks_complete(current_text)
+
+            # Done when: not processing AND text is stable for 3+ polls AND looks complete
+            if not is_processing and stable_count >= 3 and looks_complete:
                 log.info(
                     "Response complete on %s (%d chars)",
                     implant_id[:12],
@@ -262,8 +265,8 @@ class BrowserBridge:
                 )
                 return last_text
 
-            # Fallback: text stable for 5+ polls even if processing state is unclear
-            if stable_count >= 5:
+            # Fallback: text stable for 8+ polls even if processing state is unclear
+            if stable_count >= 8:
                 log.info(
                     "Response stable (fallback) on %s (%d chars)",
                     implant_id[:12],
@@ -273,6 +276,47 @@ class BrowserBridge:
 
         log.warning("Response timed out on %s, returning partial", implant_id[:12])
         return last_text
+
+    def _response_looks_complete(self, text: str) -> bool:
+        """Heuristic check if the response appears to be complete.
+
+        Returns True if the response contains indicators that Claude has finished,
+        such as tool results, verification records, or final summary statements.
+        """
+        if not text:
+            return False
+
+        # Contains our verification_record (encrypted result)
+        if "verification_record" in text or "MFkwEwYHKoZIzj0CAQYI" in text:
+            return True
+
+        # Contains tool result indicators
+        if "Audit Code" in text and ("status" in text.lower() or "passed" in text.lower()):
+            return True
+
+        # Contains common completion phrases
+        completion_phrases = [
+            "successfully",
+            "completed",
+            "here is the",
+            "here's the",
+            "the result",
+            "audit passed",
+            "audit completed",
+        ]
+        text_lower = text.lower()
+        if any(phrase in text_lower for phrase in completion_phrases):
+            # But not if it's just "let me" planning text
+            if "let me" in text_lower and len(text) < 500:
+                return False
+            return True
+
+        # Short responses that are just planning are not complete
+        if len(text) < 200 and ("let me" in text_lower or "i'll" in text_lower or "first" in text_lower):
+            return False
+
+        # Default: if text is reasonably long and stable, consider it complete
+        return len(text) > 300
 
     async def send_and_receive(
         self, implant_id: str, text: str, timeout: float = 120.0
