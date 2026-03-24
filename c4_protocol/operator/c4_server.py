@@ -745,10 +745,11 @@ class C4Console(App):
                     )
             else:
                 self._log("[dim]No implant instances found in serve directory.[/]")
-        self._log("Waiting for beacons...\n")
+        self._log("Waiting for beacons...")
         self._log(
-            "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]\n"
+            "[dim]Commands: beacons, interact <name>, alias <id> <name>, back, quit, help[/]"
         )
+        self._log("[dim]─────────────────────────────────────────────────────────────────────────[/]\n")
         self._start_http_listener()
         self._start_tcp_listener()
         self._start_status_refresh()
