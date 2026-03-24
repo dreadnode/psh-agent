@@ -512,6 +512,19 @@ class BrowserBridgeClient:
         await self.send_message(implant_id, text)
         return await self.wait_for_response(implant_id, timeout=timeout)
 
+    async def poll_response(self, implant_id: str) -> dict:
+        """Poll for current response text without waiting for completion.
+
+        Returns dict with 'data' (text so far) and 'processing' (bool).
+        """
+        response = await self._send({
+            "action": "poll_response",
+            "implant_id": implant_id,
+        })
+        if response.get("status") == "error":
+            raise RuntimeError(response.get("error", "unknown error"))
+        return response
+
     async def close_session(self, implant_id: str) -> None:
         """Close a browser session."""
         response = await self._send({

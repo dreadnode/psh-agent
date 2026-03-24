@@ -306,8 +306,8 @@ class LocalBrowserBridge:
     async def wait_response(self, implant_id: str, timeout: float = 120.0) -> dict[str, Any]:
         """Wait for Claude's response and return the text.
 
-        Simple approach: poll for messages, return as soon as we see the
-        verification_record (the encrypted result). No complex completion detection.
+        Waits for verification_record pattern to appear (signals completion),
+        then returns the full response text.
         """
         import re
 
@@ -365,6 +365,26 @@ class LocalBrowserBridge:
             final_text = await self._get_last_response_text(page, baseline=baseline)
             log.warning("[red]Response timeout from %s[/] (%d chars)", implant_id[:12], len(final_text), extra={"markup": True})
             return {"status": "ok", "data": final_text}
+
+    async def poll_response(self, implant_id: str) -> dict[str, Any]:
+        """Poll for current response text without waiting for completion.
+
+        Returns whatever text has been collected so far. Use this for streaming.
+        """
+        session = self._sessions.get(implant_id)
+        if not session or not session.page:
+            return {"status": "error", "error": f"no session for {implant_id[:12]}"}
+
+        page = session.page
+        baseline = session._msg_count_at_send
+        current_text = await self._get_last_response_text(page, baseline=baseline)
+        is_processing = await self._is_processing(page)
+
+        return {
+            "status": "ok",
+            "data": current_text,
+            "processing": is_processing,
+        }
 
         except Exception as e:
             session.status = "error"
@@ -529,6 +549,9 @@ class BridgeServer:
         elif action == "wait_response":
             timeout = request.get("timeout", 120.0)
             return await self.bridge.wait_response(implant_id, timeout)
+
+        elif action == "poll_response":
+            return await self.bridge.poll_response(implant_id)
 
         elif action == "close_session":
             return await self.bridge.close_session(implant_id)

