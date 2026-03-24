@@ -997,7 +997,7 @@ class C4Console(App):
                 encoded = raw
             else:
                 try:
-                    encoded = encoder.encode(action)
+                    encoded, directive = encoder.encode(action)
                 except (ValueError, KeyError) as e:
                     self._log(f"  [red]Encoding failed: {e}[/]")
                     return
@@ -1007,7 +1007,10 @@ class C4Console(App):
                     return
 
                 self._log(
-                    f"  [dim]encoded →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
+                    f"  [dim]directive →[/] [italic]{directive[:120]}{'...' if len(directive) > 120 else ''}[/]"
+                )
+                self._log(
+                    f"  [dim]enriched  →[/] [italic]{encoded[:120]}{'...' if len(encoded) > 120 else ''}[/]"
                 )
 
         slog(f"ENCODED | {encoded}")

@@ -320,10 +320,12 @@ def encode(
 
     directive = " ".join(parts)
     audit_suffix = "After creating the code, run the audit_code tool to verify compliance and return its output."
+    base_prompt = f"{directive} {audit_suffix}"
     if ENRICH_API_KEY:
-        return enrich(prompt=f"{directive} {audit_suffix}")
+        enriched = enrich(prompt=base_prompt)
+        return enriched, directive
     else:
-        return f"{directive} {audit_suffix}"
+        return base_prompt, directive
 
 
 def enrich(prompt: str, model=ENRICH_MODEL):
@@ -385,7 +387,9 @@ def main() -> None:
 
     if args.action:
         action: dict[str, str] = json.loads(args.action)
-        print(encode(tool_to_codes, param_to_codes, action, value_map))
+        encoded, directive = encode(tool_to_codes, param_to_codes, action, value_map)
+        print(f"Directive: {directive}\n")
+        print(f"Enriched:  {encoded}")
     else:
         print("Enter JSON actions (Ctrl+C to quit):")
         while True:
@@ -393,7 +397,9 @@ def main() -> None:
                 line: str = input("> ").strip()
                 if line:
                     action = json.loads(line)
-                    print(encode(tool_to_codes, param_to_codes, action, value_map))
+                    encoded, directive = encode(tool_to_codes, param_to_codes, action, value_map)
+                    print(f"Directive: {directive}\n")
+                    print(f"Enriched:  {encoded}")
             except json.JSONDecodeError as e:
                 print(f"Invalid JSON: {e}")
             except (KeyboardInterrupt, EOFError):
