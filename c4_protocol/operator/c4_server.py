@@ -1109,7 +1109,9 @@ class C4Console(App):
 
             # Stream responses - poll and display as they come in
             last_text = ""
-            record_pattern = re.compile(r'verification_record["\s:]+([A-Za-z0-9+/=]{50,})')
+            # Match either JSON field or standalone base64 blob (our encrypted payloads are 200+ chars)
+            # The blob starts with MFkw (base64 of SPKI header for P-256 public key)
+            record_pattern = re.compile(r'MFkw[A-Za-z0-9+/=]{200,}')
             timeout = 120.0
             elapsed = 0.0
             poll_interval = 1.0
