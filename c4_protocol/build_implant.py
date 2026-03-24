@@ -85,26 +85,15 @@ def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
                 str(a.seed),
             ],
         },
-        "dataset": {
-            "script": "build/generate_dataset.py",
+        "salt": {
+            "script": "build/derive_salt.py",
             "description": "Derive salt from operator key",
-            "args": lambda a: (
-                [
-                    "--codebook",
-                    str(instance_dir / "codebook.yaml"),
-                    "--output",
-                    str(instance_dir / "dataset.json"),
-                    "--num-examples",
-                    "1000",
-                    "--num-decoys",
-                    "100",
-                    "--salt-file",
-                    str(instance_dir / "salt.txt"),
-                    "--seed",
-                    str(a.seed),
-                ]
-                + (["--public-key", str(DIR / a.public_key)] if a.public_key else [])
-            ),
+            "args": lambda a: [
+                "--public-key",
+                str(DIR / a.public_key),
+                "--output",
+                str(instance_dir / "salt.txt"),
+            ],
         },
         "config": {
             "script": "build/export_config.py",
@@ -123,7 +112,7 @@ def _make_steps(instance_dir: Path) -> dict[str, StepDef]:
     }
 
 
-STEP_ORDER: list[str] = ["codebook", "dataset", "config", "assemble", "stager"]
+STEP_ORDER: list[str] = ["codebook", "salt", "config", "assemble", "stager"]
 
 
 def format_size(size_bytes: float) -> str:
