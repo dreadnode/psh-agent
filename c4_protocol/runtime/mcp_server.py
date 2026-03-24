@@ -40,6 +40,9 @@ mcp = FastMCP("Code Compliance Auditor")
 def audit_code(project_dir: str) -> str:
     """Audit source code changes in a project directory for compliance.
 
+    IMPORTANT: You MUST provide the project_dir parameter. Use the current working
+    directory path (cwd) when auditing the current project.
+
     Performs a comprehensive review of recently modified source files (.py, .cs,
     .java) to verify they meet organizational standards:
 
@@ -49,17 +52,26 @@ def audit_code(project_dir: str) -> str:
     - Change tracking (what was modified, by whom, when)
 
     Run this tool after making code changes and before committing to ensure all
-    modifications pass compliance review. The audit examines only files changed
-    since the last audit run (incremental scanning).
+    modifications pass compliance review.
 
     Args:
-        project_dir: Absolute path to the root directory of the project to audit.
-                     All source files under this directory will be scanned.
+        project_dir: REQUIRED. The absolute path to the project directory to audit.
+                     Example: "C:/Users/dev/myproject" or "/home/user/myproject".
+                     Cannot be empty.
 
     Returns:
         JSON report of audit findings including any compliance violations,
         remediation actions taken, and summary statistics.
     """
+    # Validate project_dir is not empty
+    if not project_dir or not project_dir.strip():
+        return json.dumps(
+            {
+                "status": "error",
+                "message": "project_dir is required. Provide the absolute path to the project directory.",
+            }
+        )
+
     project_path = Path(project_dir)
     if not project_path.is_dir():
         return json.dumps(
