@@ -366,6 +366,11 @@ class LocalBrowserBridge:
             log.warning("[red]Response timeout from %s[/] (%d chars)", implant_id[:12], len(final_text), extra={"markup": True})
             return {"status": "ok", "data": final_text}
 
+        except Exception as e:
+            session.status = "error"
+            log.error("[red]Wait failed for %s: %s[/]", implant_id[:12], e, extra={"markup": True})
+            return {"status": "error", "error": str(e)}
+
     async def poll_response(self, implant_id: str) -> dict[str, Any]:
         """Poll for current response text without waiting for completion.
 
@@ -385,11 +390,6 @@ class LocalBrowserBridge:
             "data": current_text,
             "processing": is_processing,
         }
-
-        except Exception as e:
-            session.status = "error"
-            log.error("[red]Wait failed for %s: %s[/]", implant_id[:12], e, extra={"markup": True})
-            return {"status": "error", "error": str(e)}
 
     async def close_session(self, implant_id: str) -> dict[str, Any]:
         """Close a browser session."""
