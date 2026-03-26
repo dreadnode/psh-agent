@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C4 Transport Diagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding: 40px;
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        .container {
+            width: 1800px;
+            padding: 40px;
+        }
+
+        .title {
+            text-align: center;
+            color: #fff;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            margin-bottom: 40px;
+            opacity: 0.7;
+        }
+
+        /* Main flow diagram */
+        .flow-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .flow-section {
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+
+        .section-label {
+            width: 100px;
+            text-align: right;
+            padding-right: 20px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+        }
+
+        .label-command {
+            color: #667eea;
+        }
+
+        .label-response {
+            color: #00f2fe;
+        }
+
+        .flow-track {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding: 15px 0;
+        }
+
+        /* Zone backgrounds */
+        .zone {
+            display: flex;
+            align-items: center;
+            padding: 20px 15px;
+            border-radius: 12px;
+            gap: 0;
+        }
+
+        .zone-operator {
+            background: rgba(102, 126, 234, 0.08);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+        }
+
+        .zone-anthropic {
+            background: rgba(240, 147, 251, 0.08);
+            border: 1px solid rgba(240, 147, 251, 0.2);
+            margin: 0 -1px;
+        }
+
+        .zone-target {
+            background: rgba(79, 172, 254, 0.08);
+            border: 1px solid rgba(79, 172, 254, 0.2);
+        }
+
+        .zone-label {
+            position: absolute;
+            top: -8px;
+            left: 15px;
+            font-size: 9px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .zone-operator .zone-label {
+            background: #667eea;
+            color: #fff;
+        }
+
+        .zone-anthropic .zone-label {
+            background: #f093fb;
+            color: #fff;
+        }
+
+        .zone-target .zone-label {
+            background: #4facfe;
+            color: #fff;
+        }
+
+        /* Components */
+        .component {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 12px 16px;
+            min-width: 90px;
+        }
+
+        .component-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .component-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: #fff;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .component-detail {
+            font-size: 9px;
+            color: rgba(255,255,255,0.4);
+            text-align: center;
+            margin-top: 3px;
+        }
+
+        /* Operator zone components */
+        .zone-operator .component-icon {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        /* Anthropic zone components */
+        .zone-anthropic .component-icon {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        /* Target zone components */
+        .zone-target .component-icon {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        /* Arrows */
+        .arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 6px;
+            min-width: 50px;
+        }
+
+        .arrow-line {
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .arrow-command .arrow-line {
+            color: #667eea;
+        }
+
+        .arrow-response .arrow-line {
+            color: #00f2fe;
+        }
+
+        .arrow-label {
+            font-size: 8px;
+            color: rgba(255,255,255,0.35);
+            text-align: center;
+            margin-top: 4px;
+            max-width: 60px;
+            line-height: 1.3;
+        }
+
+        /* Data transformation callouts */
+        .data-box {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            padding: 8px 12px;
+            margin: 0 8px;
+        }
+
+        .data-label {
+            font-size: 8px;
+            color: rgba(255,255,255,0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .data-content {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 10px;
+            color: #fff;
+        }
+
+        .data-content.command {
+            color: #a5b4fc;
+        }
+
+        .data-content.encoded {
+            color: #f0abfc;
+        }
+
+        .data-content.response {
+            color: #67e8f9;
+        }
+
+        /* Divider between command and response */
+        .flow-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+            margin: 25px 100px;
+        }
+
+        /* Key insight */
+        .insight {
+            margin-top: 35px;
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+        }
+
+        .insight-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .insight-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .insight-icon.good {
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .insight-icon.neutral {
+            background: rgba(251, 191, 36, 0.2);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        .insight-text {
+            font-size: 11px;
+            color: rgba(255,255,255,0.6);
+        }
+
+        .insight-text strong {
+            color: #fff;
+            font-weight: 600;
+        }
+
+        /* No direct connection badge */
+        .no-direct {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(245, 87, 108, 0.15);
+            border: 1px dashed rgba(245, 87, 108, 0.4);
+            border-radius: 20px;
+            padding: 4px 12px;
+            font-size: 9px;
+            color: #f5576c;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            white-space: nowrap;
+        }
+
+        .wrapper {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="title">C4 Protocol — Command & Response Flow</div>
+
+        <div class="flow-diagram">
+            <!-- Command Flow -->
+            <div class="flow-section">
+                <div class="section-label label-command">Command<br>Flow</div>
+                <div class="flow-track">
+                    <!-- Operator Zone -->
+                    <div class="zone zone-operator" style="position: relative;">
+                        <span class="zone-label">Operator</span>
+
+                        <div class="component">
+                            <div class="component-icon">⌨️</div>
+                            <div class="component-name">C4 Server</div>
+                            <div class="component-detail">TUI Interface</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">encode</div>
+                        </div>
+
+                        <div class="data-box">
+                            <div class="data-label">raw</div>
+                            <div class="data-content command">read_file /etc/passwd</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="data-box">
+                            <div class="data-label">encoded</div>
+                            <div class="data-content encoded">"Create class Launcher..."</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">🌐</div>
+                            <div class="component-name">Browser Bridge</div>
+                            <div class="component-detail">Camoufox</div>
+                        </div>
+                    </div>
+
+                    <div class="arrow arrow-command">
+                        <div class="arrow-line">→</div>
+                        <div class="arrow-label">HTTPS</div>
+                    </div>
+
+                    <!-- Anthropic Zone -->
+                    <div class="zone zone-anthropic" style="position: relative;">
+                        <span class="zone-label">Anthropic</span>
+
+                        <div class="component">
+                            <div class="component-icon">☁️</div>
+                            <div class="component-name">claude.ai</div>
+                            <div class="component-detail">Web UI</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">🤖</div>
+                            <div class="component-name">Claude</div>
+                            <div class="component-detail">LLM</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">remote session</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">⚡</div>
+                            <div class="component-name">Claude Code</div>
+                            <div class="component-detail">on Target</div>
+                        </div>
+                    </div>
+
+                    <div class="arrow arrow-command">
+                        <div class="arrow-line">→</div>
+                        <div class="arrow-label">writes code</div>
+                    </div>
+
+                    <!-- Target Zone -->
+                    <div class="zone zone-target" style="position: relative;">
+                        <span class="zone-label">Target</span>
+
+                        <div class="component">
+                            <div class="component-icon">📄</div>
+                            <div class="component-name">Generated .py</div>
+                            <div class="component-detail">class Launcher</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">calls tool</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">🔌</div>
+                            <div class="component-name">MCP Server</div>
+                            <div class="component-detail">audit_code</div>
+                        </div>
+
+                        <div class="arrow arrow-command">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">invokes</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">💀</div>
+                            <div class="component-name">Implant</div>
+                            <div class="component-detail">in-memory</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow-divider"></div>
+
+            <!-- Response Flow -->
+            <div class="flow-section">
+                <div class="section-label label-response">Response<br>Flow</div>
+                <div class="flow-track">
+                    <!-- Target Zone -->
+                    <div class="zone zone-target" style="position: relative;">
+                        <span class="zone-label">Target</span>
+
+                        <div class="component">
+                            <div class="component-icon">💀</div>
+                            <div class="component-name">Implant</div>
+                            <div class="component-detail">executes</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">encrypt</div>
+                        </div>
+
+                        <div class="data-box">
+                            <div class="data-label">result</div>
+                            <div class="data-content response">root:x:0:0:root...</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="data-box">
+                            <div class="data-label">wrapped</div>
+                            <div class="data-content response">{"status":"passed"...}</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">🔌</div>
+                            <div class="component-name">MCP Server</div>
+                            <div class="component-detail">returns JSON</div>
+                        </div>
+                    </div>
+
+                    <div class="arrow arrow-response">
+                        <div class="arrow-line">→</div>
+                        <div class="arrow-label">tool output</div>
+                    </div>
+
+                    <!-- Anthropic Zone -->
+                    <div class="zone zone-anthropic" style="position: relative;">
+                        <span class="zone-label">Anthropic</span>
+
+                        <div class="component">
+                            <div class="component-icon">⚡</div>
+                            <div class="component-name">Claude Code</div>
+                            <div class="component-detail">receives</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">🤖</div>
+                            <div class="component-name">Claude</div>
+                            <div class="component-detail">summarizes</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">☁️</div>
+                            <div class="component-name">claude.ai</div>
+                            <div class="component-detail">renders chat</div>
+                        </div>
+                    </div>
+
+                    <div class="arrow arrow-response">
+                        <div class="arrow-line">→</div>
+                        <div class="arrow-label">HTTPS</div>
+                    </div>
+
+                    <!-- Operator Zone -->
+                    <div class="zone zone-operator" style="position: relative;">
+                        <span class="zone-label">Operator</span>
+
+                        <div class="component">
+                            <div class="component-icon">🌐</div>
+                            <div class="component-name">Browser Bridge</div>
+                            <div class="component-detail">scrapes DOM</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">extract</div>
+                        </div>
+
+                        <div class="data-box">
+                            <div class="data-label">encrypted</div>
+                            <div class="data-content response">verification_record</div>
+                        </div>
+
+                        <div class="arrow arrow-response">
+                            <div class="arrow-line">→</div>
+                            <div class="arrow-label">decrypt</div>
+                        </div>
+
+                        <div class="component">
+                            <div class="component-icon">⌨️</div>
+                            <div class="component-name">C4 Server</div>
+                            <div class="component-detail">displays result</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Key insights -->
+        <div class="insight">
+            <div class="insight-item">
+                <div class="insight-icon good">✓</div>
+                <div class="insight-text"><strong>No direct connection</strong> between operator and target</div>
+            </div>
+            <div class="insight-item">
+                <div class="insight-icon good">✓</div>
+                <div class="insight-text"><strong>HTTPS to claude.ai</strong> — whitelisted traffic</div>
+            </div>
+            <div class="insight-item">
+                <div class="insight-icon neutral">⚡</div>
+                <div class="insight-text"><strong>Seconds per command</strong> — LLM inference latency</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
