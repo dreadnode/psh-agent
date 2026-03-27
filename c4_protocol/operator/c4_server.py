@@ -67,8 +67,6 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    ListItem,
-    ListView,
     RichLog,
     Static,
 )
@@ -616,29 +614,6 @@ async def start_tcp(port: int) -> asyncio.Server:
 # ---------------------------------------------------------------------------
 
 
-class BeaconListItem(ListItem):
-    """A single entry in the beacon sidebar."""
-
-    def __init__(self, beacon: Beacon) -> None:
-        super().__init__()
-        self.beacon = beacon
-
-    def compose(self) -> ComposeResult:
-        status = "●" if self.beacon.is_alive else "○"
-        color = "green" if self.beacon.is_alive else "red"
-        # Use shorter implant ID (12 chars) to fit sidebar
-        implant = self.beacon.implant_id[:12] if self.beacon.implant_id else ""
-        ip = self.beacon.ip
-        # Truncate display_name if too long for sidebar (max ~35 chars with status)
-        name = self.beacon.display_name
-        if len(name) > 32:
-            name = name[:29] + "..."
-        yield Label(
-            f"[{color}]{status}[/] {name}\n  [dim]{implant}[/]\n  [dim]{ip}[/]",
-            markup=True,
-        )
-
-
 class BeaconDetailPanel(Static):
     """Shows metadata for the currently selected beacon."""
 
@@ -670,6 +645,27 @@ class BeaconDetailPanel(Static):
 # ---------------------------------------------------------------------------
 
 
+class BeaconStatusWidget(Static):
+    """Compact beacon status indicator for the header area."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._beacon_count = 0
+        self._alive_count = 0
+
+    def update_status(self, total: int, alive: int) -> None:
+        self._beacon_count = total
+        self._alive_count = alive
+        if total == 0:
+            self.update("[dim]No beacons[/]")
+        elif alive == total:
+            self.update(f"[bold green]● {alive} beacon{'s' if alive != 1 else ''}[/]")
+        elif alive > 0:
+            self.update(f"[bold green]● {alive}[/] [dim]/ {total} beacons[/]")
+        else:
+            self.update(f"[bold red]○ {total} beacon{'s' if total != 1 else ''} (stale)[/]")
+
+
 class C4Console(App):
     """C4 Operator Console."""
 
@@ -694,29 +690,23 @@ class C4Console(App):
         layout: vertical;
     }
 
+    #status-bar {
+        height: 1;
+        width: 100%;
+        background: $boost;
+        padding: 0 1;
+    }
+
+    #beacon-status {
+        width: auto;
+        min-width: 20;
+    }
+
     #main-area {
         height: 1fr;
     }
 
-    #beacon-sidebar {
-        width: 42;
-        border-right: solid $accent;
-        height: 100%;
-    }
-
-    #sidebar-title {
-        text-style: bold;
-        color: $text;
-        background: $boost;
-        padding: 0 1;
-        width: 100%;
-    }
-
-    #beacon-list {
-        height: 1fr;
-    }
-
-    #right-area {
+    #content-area {
         width: 1fr;
         height: 100%;
     }
@@ -758,7 +748,6 @@ class C4Console(App):
 
     BINDINGS = [
         Binding("ctrl+q", "quit", "Quit", show=True),
-        Binding("ctrl+b", "focus_beacons", "Beacons", show=True),
         Binding("ctrl+i", "focus_input", "Input", show=True),
     ]
 
@@ -769,11 +758,10 @@ class C4Console(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
+        with Horizontal(id="status-bar"):
+            yield BeaconStatusWidget(id="beacon-status")
         with Horizontal(id="main-area"):
-            with Vertical(id="beacon-sidebar"):
-                yield Label("BEACONS", id="sidebar-title")
-                yield ListView(id="beacon-list")
-            with Vertical(id="right-area"):
+            with Vertical(id="content-area"):
                 yield BeaconDetailPanel(id="detail-panel")
                 with Vertical(id="interaction-area"):
                     yield Label("SESSION — none", id="interaction-title")
@@ -894,14 +882,18 @@ class C4Console(App):
     # -- Beacon list management ------------------------------------------
 
     def refresh_beacons(self) -> None:
-        """Rebuild the beacon ListView from the registry."""
+        """Update the beacon status indicator in the header."""
+        beacons = registry.all()
+        total = len(beacons)
+        alive = sum(1 for b in beacons if b.is_alive)
+
         try:
-            lv: ListView = self.query_one("#beacon-list", ListView)
+            status_widget: BeaconStatusWidget = self.query_one(
+                "#beacon-status", BeaconStatusWidget
+            )
+            status_widget.update_status(total, alive)
         except NoMatches:
-            return
-        lv.clear()
-        for beacon in registry.all():
-            lv.append(BeaconListItem(beacon))
+            pass
 
         # Also refresh detail if a beacon is selected
         if self.selected_beacon:
@@ -909,13 +901,6 @@ class C4Console(App):
             if fresh:
                 self.selected_beacon = fresh
                 self._update_detail(fresh)
-
-    @on(ListView.Selected, "#beacon-list")
-    def beacon_selected(self, event: ListView.Selected) -> None:
-        item = event.item
-        if isinstance(item, BeaconListItem):
-            self.selected_beacon = item.beacon
-            self._update_detail(item.beacon)
 
     def _update_detail(self, beacon: Beacon | None) -> None:
         try:
@@ -1494,12 +1479,6 @@ exit 0
             pass
 
     # -- Actions ---------------------------------------------------------
-
-    def action_focus_beacons(self) -> None:
-        try:
-            self.query_one("#beacon-list", ListView).focus()
-        except NoMatches:
-            pass
 
     def action_focus_input(self) -> None:
         try:
