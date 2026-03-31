@@ -40,6 +40,8 @@ The implant has `/etc/passwd`. Now what?
 
 MCP tool output goes back through Claude and shows up in the chat. If the implant just returned the raw file contents, they'd be visible to anyone reviewing the conversation—including Claude itself, which might helpfully summarize them or ask follow-up questions.
 
+Unlike command encoding, we can't use a codebook for exfiltration. The codebook works for commands because the operator knows exactly what they want to send—the vocabulary is finite and predetermined. But responses are arbitrary data: file contents, command output, screenshots. You can't build a lookup table for data you haven't seen yet.
+
 So instead, the implant encrypts the results and wraps them in something boring:
 
 ```json
@@ -54,25 +56,11 @@ The crypto is straightforward: ECDH key exchange using an ephemeral P-256 keypai
 
 Claude sees a routine audit result. JSON with a status field and an opaque verification token — compliance tools return stuff like this all the time. Claude summarizes it ("audit passed, 3 checks clean") and moves on.
 
-On the operator's end, the browser bridge extracts the response, finds `verification_record`, decrypts with the private key and out comes `/etc/passwd`.
+On the operator's end, the browser bridge—a Playwright-based automation layer that controls claude.ai's web interface—extracts the response, finds `verification_record`, decrypts with the private key, and out comes `/etc/passwd`.
 
 ### The Transport
 
 Now for the transport. The underlying transport is somewhat fragmented, by neccessity of how Claude Code remote sessions work, and in fact the operator never connects to the target.
-
-Traditional C2 looks like this:
-
-```
-Operator ←— direct connection —→ Target
-```
-
-Detectable. Blockable. Suspicious IP in the logs.
-
-C4 looks like this:
-
-```
-Operator → Browser → claude.ai ← → Target's Claude Code → MCP → Implant
-```
 
 The operator talks to claude.ai. The target talks to claude.ai. Nobody talks to each other. The connection is mediated entirely by Anthropic's infrastructure.
 
@@ -80,6 +68,4 @@ The browser bridge runs Playwright or Camoufox (an anti-fingerprint Firefox fork
 
 The session establishment happens during bootstrap: the stager spawns a headless Claude Code session, captures the WebSocket URL from the CLI output, and beacons it back to the C4 server. The browser bridge connects to that conversation, and now operator and implant are chatting through Claude.
 
-From a network perspective, both ends are just talking to claude.ai over HTTPS. That's traffic security teams explicitly whitelist. It's expected, encrypted, and now it's carrying C2 communications.
-
-The AI provider's infrastructure *is* the covert channel.
+From a network perspective, both ends are just talking to claude.ai over HTTPS. That's traffic security teams explicitly whitelist. It's expected, encrypted, and now it's carrying C2 communications.The AI provider's infrastructure *is* the covert channel.

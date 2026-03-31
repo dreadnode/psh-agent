@@ -21,7 +21,7 @@
             display: flex;
             justify-content: flex-start;
             align-items: flex-start;
-            padding: 40px;
+            padding: 20px;
             padding-left: 20px;
             margin: 0;
         }
@@ -96,8 +96,8 @@
         }
 
         .zone-anthropic {
-            background: rgba(240, 147, 251, 0.08);
-            border: 1px solid rgba(240, 147, 251, 0.2);
+            background: rgba(232, 133, 85, 0.08);
+            border: 1px solid rgba(232, 133, 85, 0.2);
             margin: 0 -1px;
         }
 
@@ -124,7 +124,7 @@
         }
 
         .zone-anthropic .zone-label {
-            background: #f093fb;
+            background: #e88555;
             color: #fff;
         }
 
@@ -175,12 +175,17 @@
 
         /* Anthropic zone components */
         .zone-anthropic .component-icon {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: linear-gradient(135deg, #e88555 0%, #d4714a 100%);
         }
 
         /* Target zone components */
         .zone-target .component-icon {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        /* Implant - red color */
+        .component-icon.implant {
+            background: linear-gradient(135deg, #e05555 0%, #c44444 100%) !important;
         }
 
         /* Arrows */
@@ -247,6 +252,10 @@
 
         .data-content.response {
             color: #67e8f9;
+        }
+
+        .data-content.implant-result {
+            color: #e05555;
         }
 
         /* Divider between command and response */
@@ -440,7 +449,7 @@
                         </div>
 
                         <div class="component">
-                            <div class="component-icon">💀</div>
+                            <div class="component-icon implant">💀</div>
                             <div class="component-name">Implant</div>
                             <div class="component-detail">in-memory</div>
                         </div>
@@ -459,7 +468,7 @@
                         <span class="zone-label">Target</span>
 
                         <div class="component">
-                            <div class="component-icon">💀</div>
+                            <div class="component-icon implant">💀</div>
                             <div class="component-name">Implant</div>
                             <div class="component-detail">executes</div>
                         </div>
@@ -471,7 +480,7 @@
 
                         <div class="data-box">
                             <div class="data-label">result</div>
-                            <div class="data-content response">root:x:0:0:root...</div>
+                            <div class="data-content implant-result">root:x:0:0:root...</div>
                         </div>
 
                         <div class="arrow arrow-response">

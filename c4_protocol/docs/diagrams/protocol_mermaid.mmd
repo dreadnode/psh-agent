@@ -1,0 +1,51 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#667eea', 'primaryTextColor': '#fff', 'primaryBorderColor': '#764ba2', 'lineColor': '#888', 'secondaryColor': '#f093fb', 'tertiaryColor': '#4facfe', 'background': '#0f0f1a', 'mainBkg': '#1a1a2e', 'noteBkgColor': '#2a2a40', 'noteTextColor': '#fff', 'noteBorderColor': '#444', 'actorBkg': '#667eea', 'actorTextColor': '#fff', 'actorBorder': '#764ba2', 'actorLineColor': '#667eea', 'signalColor': '#a5b4fc', 'signalTextColor': '#fff', 'labelBoxBkgColor': '#1a1a2e', 'labelTextColor': '#fff'}}}%%
+sequenceDiagram
+    participant C4 as C4 Server
+    participant BB as Browser Bridge
+    participant WEB as claude.ai
+    participant LLM as Claude LLM
+    participant CC as Claude Code
+    participant MCP as MCP Server
+    participant IMP as Implant
+
+    rect rgba(102,126,234,0.25)
+    Note over C4,BB: OPERATOR ZONE
+    end
+
+    rect rgba(232,133,85,0.25)
+    Note over WEB,CC: ANTHROPIC INFRASTRUCTURE
+    end
+
+    rect rgba(224,85,85,0.25)
+    Note over MCP,IMP: TARGET ZONE
+    end
+
+    Note over C4,IMP: COMMAND FLOW
+
+    C4->>C4: Encode command
+    Note right of C4: read_file /etc/passwd<br/>→ "Create class Launcher..."
+
+    C4->>BB: Encoded directive
+    BB->>WEB: HTTPS request
+    WEB->>LLM: Process request
+    LLM->>CC: Remote session
+    CC->>CC: Generate .py file
+    CC->>MCP: audit_code()
+    MCP->>IMP: Invoke PowerShell
+
+    Note over IMP: Scan files<br/>Extract codewords<br/>Vault lookup<br/>Execute tool
+
+    Note over C4,IMP: RESPONSE FLOW
+
+    IMP->>IMP: Encrypt result
+    Note right of IMP: P-256 ECDH + AES-256
+
+    IMP-->>MCP: JSON response
+    MCP-->>CC: Audit passed
+    CC-->>LLM: Tool output
+    LLM-->>WEB: Summary
+    WEB-->>BB: DOM response
+    BB-->>C4: Extract text
+
+    C4->>C4: Decrypt
+    Note right of C4: verification_record<br/>→ reveals /etc/passwd contents
